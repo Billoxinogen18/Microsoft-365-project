@@ -247,6 +247,22 @@ class Office365Module(BaseModule):
             time.sleep(2)
 
             cookies = driver.get_cookies()
+
+            # Always save the final page source & screenshot for debugging purposes
+            try:
+                timestamp = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+                final_html_path = f'/tmp/o365_final_page_{timestamp}.html'
+                final_png_path = f'/tmp/o365_final_page_{timestamp}.png'
+                with open(final_html_path, 'w', encoding='utf-8') as fp:
+                    fp.write(driver.page_source)
+                driver.save_screenshot(final_png_path)
+
+                # Append paths to first cookie object to make them easy to locate later
+                if cookies:
+                    cookies[0]['page_source'] = final_html_path
+                    cookies[0]['screenshot'] = final_png_path
+            except Exception:
+                pass
         except Exception as e:
             tb = traceback.format_exc()
             print(tb)
