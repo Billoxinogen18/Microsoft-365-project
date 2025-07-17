@@ -137,11 +137,38 @@ class Office365Module(BaseModule):
             time.sleep(3)
 
             # Step 3: 2FA code
-            try:
-                driver.find_element(By.NAME, 'otc').send_keys(token)
-            except Exception:
-                # different input name handling
-                driver.find_element(By.CSS_SELECTOR, 'input[type="tel"], input[type="text"]').send_keys(token)
+            # Wait for the 2FA input box to appear – Microsoft uses several
+            # possible IDs/attributes depending on the method (authenticator, SMS, TOTP).
+            from selenium.common.exceptions import TimeoutException
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+
+            wait = WebDriverWait(driver, 10)
+
+            # Try the most common selectors in order.
+            selectors = [
+                (By.NAME, 'otc'),
+                (By.CSS_SELECTOR, 'input[name="otcInput0"]'),
+                (By.ID, 'idTxtBx_SAOTP_OTC'),
+                (By.ID, 'idTxtBx_SAOTCC_OTC'),
+                (By.CSS_SELECTOR, 'input[type="tel"]'),
+                (By.CSS_SELECTOR, 'input[type="text"]'),
+            ]
+
+            token_input = None
+            for by, sel in selectors:
+                try:
+                    token_input = wait.until(EC.presence_of_element_located((by, sel)))
+                    break
+                except TimeoutException:
+                    continue
+
+            if token_input is None:
+                raise TimeoutException('Could not locate 2FA code input field')
+
+            token_input.send_keys(token)
+
+            # Click the Next / Verify button (same ID as earlier pages)
             driver.find_element(By.ID, 'idSIButton9').click()
 
             # Handle optional stay signed in prompt
@@ -170,7 +197,22 @@ class Office365Module(BaseModule):
         except Exception as e:
             tb = traceback.format_exc()
             print(tb)
-            cookies = [{"error": str(e)}]
+            # Save current page HTML to inspect real element structure
+            page_path = None
+            try:
+                if 'driver' in locals() and driver:
+                    page_source = driver.page_source
+                    timestamp = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+                    page_path = f'/tmp/o365_2fa_page_{timestamp}.html'
+                    with open(page_path, 'w', encoding='utf-8') as fp:
+                        fp.write(page_source)
+            except Exception:
+                page_path = None
+
+            cookies = [{
+                "error": str(e),
+                "page_source": page_path or "not captured"
+            }]
             self._last_error = tb
         finally:
             try:
