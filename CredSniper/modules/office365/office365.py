@@ -9,7 +9,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-import os
+import os, traceback, shutil, datetime
 
 class Office365Module(BaseModule):
     def __init__(self, enable_2fa=False):
@@ -97,7 +97,14 @@ class Office365Module(BaseModule):
             return []
 
         opts = webdriver.ChromeOptions()
+        def log(msg):
+            print(f"[{datetime.datetime.utcnow().isoformat()}] SELENIUM: {msg}")
+
         opts.binary_location = os.getenv('CHROME_BIN', '/usr/bin/chromium')
+        if not os.path.exists(opts.binary_location):
+            alt = shutil.which('chromium') or shutil.which('chromium-browser') or '/usr/lib/chromium/chromium'
+            opts.binary_location = alt
+        log(f"Using chrome binary: {opts.binary_location}")
         opts.add_argument('--headless=new')
         opts.add_argument('--no-sandbox')
         opts.add_argument('--disable-dev-shm-usage')
@@ -106,12 +113,11 @@ class Office365Module(BaseModule):
         opts.add_argument('--no-zygote')
 
         try:
-            chromedriver_path = '/usr/bin/chromedriver'
-            if os.path.exists(chromedriver_path):
-                driver = webdriver.Chrome(service=Service(chromedriver_path), options=opts)
-            else:
-                driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
-            driver.set_page_load_timeout(30)
+            # Let Selenium Manager fetch the correct chromedriver automatically
+            log("Launching Chrome via Selenium Manager…")
+            driver = webdriver.Chrome(options=opts)
+            driver.set_page_load_timeout(60)
+            log("Chrome WebDriver session started")
 
             # Step 1: email
             driver.get('https://login.microsoftonline.com/')
