@@ -3,6 +3,8 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 from jinja2 import FileSystemLoader
 from core import config, functions, output
 import os, importlib, argparse, time
+import flask.cli
+flask.cli.show_server_banner = lambda *args, **kwargs: None  # suppress Werkzeug banner
 import sys
 sys.modules['credsniper'] = sys.modules[__name__]
 
@@ -124,7 +126,8 @@ def custom_401(error):
     return jsonify({'message': error.description['message']}), 401
 
 if __name__ == "__main__":
-    output.print_banner()
+    # Suppress ASCII banner for cleaner logs
+    # output.print_banner()
     cs.verbose_print('Module: {}'.format(cs.module_name))
     cs.verbose_print('Port: {}'.format(cs.port))
     cs.verbose_print('Use SSL: {}'.format(cs.enable_ssl))
