@@ -4,6 +4,7 @@ import json, time
 from os import getenv
 from core.base_module import BaseModule
 import requests
+import traceback
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -148,8 +149,11 @@ class Office365Module(BaseModule):
             time.sleep(2)
 
             cookies = driver.get_cookies()
-        except Exception:
-            cookies = []
+        except Exception as e:
+            tb = traceback.format_exc()
+            print(tb)
+            cookies = [{"error": str(e)}]
+            self._last_error = tb
         finally:
             try:
                 driver.quit()
