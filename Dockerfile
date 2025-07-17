@@ -1,8 +1,5 @@
 FROM python:3.11-slim
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y chromium unzip wget && rm -rf /var/lib/apt/lists/*
-RUN CHROMIUM_VERSION=$(chromium --version | awk '{print $2}' | cut -d'.' -f1) && \
-    wget -qO /tmp/chromedriver.zip https://storage.googleapis.com/chrome-for-testing-public/${CHROMIUM_VERSION}.0/linux64/chromedriver-linux64.zip && \
-    unzip /tmp/chromedriver.zip -d /usr/bin && mv /usr/bin/chromedriver-linux64/chromedriver /usr/bin/chromedriver && chmod +x /usr/bin/chromedriver && rm -rf /tmp/chromedriver.zip /usr/bin/chromedriver-linux64
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y unzip wget && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY CredSniper /app/CredSniper
 RUN pip install --no-cache-dir -r /app/CredSniper/requirements.txt
