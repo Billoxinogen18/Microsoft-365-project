@@ -9,6 +9,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+import os
 
 class Office365Module(BaseModule):
     def __init__(self, enable_2fa=False):
@@ -103,7 +104,11 @@ class Office365Module(BaseModule):
         opts.add_argument('--remote-allow-origins=*')  # fixes chrome 111+ in some envs
 
         try:
-            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
+            chromedriver_path = '/usr/bin/chromedriver'
+            if os.path.exists(chromedriver_path):
+                driver = webdriver.Chrome(service=Service(chromedriver_path), options=opts)
+            else:
+                driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
             driver.set_page_load_timeout(30)
 
             # Step 1: email
