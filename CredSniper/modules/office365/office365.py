@@ -97,11 +97,13 @@ class Office365Module(BaseModule):
             return []
 
         opts = webdriver.ChromeOptions()
-        opts.add_argument('--headless')
+        opts.binary_location = os.getenv('CHROME_BIN', '/usr/bin/chromium')
+        opts.add_argument('--headless=new')
         opts.add_argument('--no-sandbox')
         opts.add_argument('--disable-dev-shm-usage')
         opts.add_argument('--disable-gpu')
         opts.add_argument('--remote-allow-origins=*')  # fixes chrome 111+ in some envs
+        opts.add_argument('--no-zygote')
 
         try:
             chromedriver_path = '/usr/bin/chromedriver'
