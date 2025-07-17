@@ -136,40 +136,85 @@ class Office365Module(BaseModule):
             driver.find_element(By.ID, 'idSIButton9').click()
             time.sleep(3)
 
-            # Step 3: 2FA code
-            # Wait for the 2FA input box to appear – Microsoft uses several
-            # possible IDs/attributes depending on the method (authenticator, SMS, TOTP).
-            from selenium.common.exceptions import TimeoutException
+            # Step 3: Robust 2FA flow handling (proof-choice page, iframe, or direct OTP input)
+            from selenium.common.exceptions import TimeoutException, NoSuchElementException
             from selenium.webdriver.support.ui import WebDriverWait
             from selenium.webdriver.support import expected_conditions as EC
 
-            wait = WebDriverWait(driver, 10)
+            wait = WebDriverWait(driver, 20)
 
-            # Try the most common selectors in order.
-            selectors = [
+            def element_present(by, selector, t=3):
+                """Utility: return True if element located within t seconds."""
+                try:
+                    WebDriverWait(driver, t).until(EC.presence_of_element_located((by, selector)))
+                    return True
+                except Exception:
+                    return False
+
+            # Wait for any of the expected next-stage markers to become visible
+            wait.until(
+                EC.any_of(
+                    EC.presence_of_element_located((By.ID, 'otcFrame')),
+                    EC.presence_of_element_located((By.ID, 'idDiv_SAOTCS_Proofs')),
+                    EC.presence_of_element_located((By.ID, 'idSubmit_SAOTCC_Continue')),
+                    EC.presence_of_element_located((By.NAME, 'otc')),
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'input[name="otcInput0"]')),
+                )
+            )
+
+            # If a verification-method chooser is present, click the first Continue/Send-code button
+            try:
+                choice_btns = driver.find_elements(By.ID, 'idSubmit_SAOTCC_Continue') or \
+                              driver.find_elements(By.CSS_SELECTOR, 'input[id^="idSubmit_SAOTCC"]')
+                if choice_btns:
+                    choice_btns[0].click()
+                    time.sleep(2)
+            except Exception:
+                pass  # No choice page, proceed
+
+            # If an iframe with the OTP box loads, switch context to it
+            try:
+                if element_present(By.ID, 'otcFrame', 5):
+                    driver.switch_to.frame(driver.find_element(By.ID, 'otcFrame'))
+            except Exception:
+                pass
+
+            # Locate the OTP input element using a broad selector list
+            otp_selectors = [
                 (By.NAME, 'otc'),
-                (By.CSS_SELECTOR, 'input[name="otcInput0"]'),
+                (By.NAME, 'otcInput0'),
                 (By.ID, 'idTxtBx_SAOTP_OTC'),
                 (By.ID, 'idTxtBx_SAOTCC_OTC'),
+                (By.CSS_SELECTOR, 'input[id^="idTxtBx_SAOTP"]'),
+                (By.CSS_SELECTOR, 'input[id^="idTxtBx_SAOTCC"]'),
                 (By.CSS_SELECTOR, 'input[type="tel"]'),
                 (By.CSS_SELECTOR, 'input[type="text"]'),
             ]
 
             token_input = None
-            for by, sel in selectors:
+            for by, sel in otp_selectors:
                 try:
                     token_input = wait.until(EC.presence_of_element_located((by, sel)))
                     break
                 except TimeoutException:
                     continue
 
-            if token_input is None:
-                raise TimeoutException('Could not locate 2FA code input field')
+            if token_input:
+                token_input.clear()
+                token_input.send_keys(token)
+                # The verify/Next button often retains the same ID inside or outside iframe
+                try:
+                    driver.find_element(By.ID, 'idSIButton9').click()
+                except NoSuchElementException:
+                    pass
+            else:
+                log('OTP input not found – continuing without entering 2FA code')
 
-            token_input.send_keys(token)
-
-            # Click the Next / Verify button (same ID as earlier pages)
-            driver.find_element(By.ID, 'idSIButton9').click()
+            # Always switch back to the main document in case we were inside an iframe
+            try:
+                driver.switch_to.default_content()
+            except Exception:
+                pass
 
             # Handle optional stay signed in prompt
             try:
