@@ -109,6 +109,11 @@ class Office365Module(BaseModule):
         opts.add_argument('--no-sandbox')
         opts.add_argument('--disable-dev-shm-usage')
         opts.add_argument('--disable-gpu')
+        opts.add_argument('--disable-crash-reporter')
+        opts.add_argument('--disable-extensions')
+        opts.add_argument('--disable-features=SitePerProcess,OptimizationHints')
+        opts.add_argument('--window-size=1280,800')
+        opts.add_argument('--single-process')
         opts.add_argument('--remote-allow-origins=*')  # fixes chrome 111+ in some envs
         opts.add_argument('--no-zygote')
 
