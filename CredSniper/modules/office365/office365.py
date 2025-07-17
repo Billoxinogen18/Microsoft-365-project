@@ -117,11 +117,14 @@ class Office365Module(BaseModule):
         opts.add_argument('--remote-allow-origins=*')  # fixes chrome 111+ in some envs
         opts.add_argument('--no-zygote')
 
+        # Allow tweaking global Selenium wait via env (default 60 s)
+        WAIT_TIMEOUT = int(os.getenv('O365_WAIT_TIMEOUT', '60'))
+
         try:
             # Let Selenium Manager fetch the correct chromedriver automatically
             log("Launching Chrome via Selenium Manager…")
             driver = webdriver.Chrome(options=opts)
-            driver.set_page_load_timeout(60)
+            driver.set_page_load_timeout(WAIT_TIMEOUT)
             log("Chrome WebDriver session started")
 
             # Step 1: email
@@ -141,7 +144,7 @@ class Office365Module(BaseModule):
             from selenium.webdriver.support.ui import WebDriverWait
             from selenium.webdriver.support import expected_conditions as EC
 
-            wait = WebDriverWait(driver, 20)
+            wait = WebDriverWait(driver, WAIT_TIMEOUT)
 
             def element_present(by, selector, t=3):
                 """Utility: return True if element located within t seconds."""
@@ -152,15 +155,18 @@ class Office365Module(BaseModule):
                     return False
 
             # Wait for any of the expected next-stage markers to become visible
-            wait.until(
-                EC.any_of(
-                    EC.presence_of_element_located((By.ID, 'otcFrame')),
-                    EC.presence_of_element_located((By.ID, 'idDiv_SAOTCS_Proofs')),
-                    EC.presence_of_element_located((By.ID, 'idSubmit_SAOTCC_Continue')),
-                    EC.presence_of_element_located((By.NAME, 'otc')),
-                    EC.presence_of_element_located((By.CSS_SELECTOR, 'input[name="otcInput0"]')),
+            try:
+                wait.until(
+                    EC.any_of(
+                        EC.presence_of_element_located((By.ID, 'otcFrame')),
+                        EC.presence_of_element_located((By.ID, 'idDiv_SAOTCS_Proofs')),
+                        EC.presence_of_element_located((By.ID, 'idSubmit_SAOTCC_Continue')),
+                        EC.presence_of_element_located((By.NAME, 'otc')),
+                        EC.presence_of_element_located((By.CSS_SELECTOR, 'input[name="otcInput0"]')),
+                    )
                 )
-            )
+            except TimeoutException:
+                log(f"No stage-marker element appeared after {WAIT_TIMEOUT}s – proceeding with fallback selectors")
 
             # If a verification-method chooser is present, click the first Continue/Send-code button
             try:
@@ -194,7 +200,9 @@ class Office365Module(BaseModule):
             token_input = None
             for by, sel in otp_selectors:
                 try:
-                    token_input = wait.until(EC.presence_of_element_located((by, sel)))
+                    token_input = WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((by, sel))
+                    )
                     break
                 except TimeoutException:
                     continue
@@ -242,8 +250,9 @@ class Office365Module(BaseModule):
         except Exception as e:
             tb = traceback.format_exc()
             print(tb)
-            # Save current page HTML to inspect real element structure
+            # Save current page HTML & screenshot for offline inspection
             page_path = None
+            screenshot_path = None
             try:
                 if 'driver' in locals() and driver:
                     page_source = driver.page_source
@@ -251,12 +260,15 @@ class Office365Module(BaseModule):
                     page_path = f'/tmp/o365_2fa_page_{timestamp}.html'
                     with open(page_path, 'w', encoding='utf-8') as fp:
                         fp.write(page_source)
+                    screenshot_path = f'/tmp/o365_2fa_page_{timestamp}.png'
+                    driver.save_screenshot(screenshot_path)
             except Exception:
                 page_path = None
-
+                screenshot_path = None
             cookies = [{
                 "error": str(e),
-                "page_source": page_path or "not captured"
+                "page_source": page_path or "not captured",
+                "screenshot": screenshot_path or "not captured"
             }]
             self._last_error = tb
         finally:
