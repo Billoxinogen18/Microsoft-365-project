@@ -16,7 +16,7 @@ ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 # Set workdir
 WORKDIR /app
 COPY CredSniper /app/CredSniper
-COPY requirements.txt /app/requirements.txt
+COPY CredSniper/requirements.txt /app/requirements.txt
 
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
