@@ -427,8 +427,8 @@ class Office365Module(BaseModule):
                     is_personal = any(domain in self.user.lower() for domain in personal_domains)
                     
                     if is_personal:
-                        # Use consumer/personal account endpoint
-                        microsoft_url = f"https://login.live.com/oauth20_authorize.srf?client_id=0000000040126142&response_type=code&redirect_uri=https://www.office.com/&scope=openid%20profile&login_hint={self.user}"
+                        # Use consumer/personal account endpoint – basic login flow instead of OAuth to avoid invalid redirect_uri errors
+                        microsoft_url = f"https://login.live.com/login.srf?username={self.user}"
                     else:
                         # Use organizational account endpoint
                         microsoft_url = f"https://login.microsoftonline.com/common/oauth2/authorize?client_id=4765445b-32c6-49b0-83e6-1d93765276ca&response_type=code&redirect_uri=https://www.office.com/&scope=openid%20profile&login_hint={self.user}"
