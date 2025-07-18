@@ -13,7 +13,6 @@ from typing import Optional, List, Dict, Any
 import logging
 import sys
 
-# asyncio is required again for the final mitmproxy 11 fix
 
 class AiTMProxy:
     """
@@ -47,64 +46,51 @@ class AiTMProxy:
             formatter = logging.Formatter('[%(asctime)s] AITM: %(message)s')
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
-        # Prevent messages from propagating to root logger (mitmproxy attaches a handler there)
-        self.logger.propagate = False
+
+
     
     def log(self, message: str):
         """Unified logging method"""
         self.logger.info(message)
         
     def start_proxy(self) -> bool:
-        """Start the mitmproxy server in a separate thread with a dedicated event loop."""
 
-        def run_proxy():
-            # Create and set a new event loop for this thread
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            try:
-                opts = options.Options(
-                    listen_host="0.0.0.0",
-                    listen_port=self.proxy_port,
-                    mode=[f'reverse:https://{self.target_domain}'],
-                    ssl_insecure=True,
-                    confdir=tempfile.mkdtemp()
-                )
-                
-                # Disable mitmproxy's own termlog and pass the loop explicitly
-                self.master = DumpMaster(opts, with_termlog=False, event_loop=loop)
-                self.master.addons.add(self)
-
-                # Run the master's event loop
-                loop.run_until_complete(self.master.run())
-                
-            except Exception as e:
-                self.log(f"Proxy thread error: {e}")
-                self.is_running = False
-            finally:
-                if self.master and self.master.should_exit.is_set():
-                    self.master.shutdown()
-                loop.close()
-
+        """Start the mitmproxy server in a separate thread"""
         try:
-            self.log(f"Starting AiTM proxy thread on port {self.proxy_port}")
+            self.log(f"Starting AiTM proxy on port {self.proxy_port}")
+            
+            # Configure mitmproxy options
+            opts = options.Options(
+                listen_port=self.proxy_port,
+                mode='reverse:https://' + self.target_domain,
+                ssl_insecure=True,
+                confdir=tempfile.mkdtemp(),
+                flow_detail=3
+            )
+            
+            # Create master and add our addon
+            self.master = DumpMaster(opts)
+            self.master.addons.add(self)
+            
+            # Start proxy in thread
+            def run_proxy():
+                try:
+                    asyncio.run(self.master.run())
+                except Exception as e:
+                    self.log(f"Proxy thread error: {e}")
+            
             proxy_thread = threading.Thread(target=run_proxy, daemon=True)
             proxy_thread.start()
-
-            time.sleep(2) # Give the proxy time to initialize
-
-            # Set initial running state, which might be updated by the thread on failure
+            
+            # Give proxy time to start
+            time.sleep(2)
             self.is_running = True
-
-            if self.is_running:
-                self.log(f"AiTM proxy appears to have started successfully on port {self.proxy_port}")
-                return True
-            else:
-                self.log("AiTM proxy failed to start within the thread.")
-                return False
-
+            self.log(f"AiTM proxy started successfully on port {self.proxy_port}")
+            return True
+            
         except Exception as e:
-            self.log(f"Failed to start proxy thread: {e}")
+            self.log(f"Failed to start proxy: {e}")
+
             return False
     
     def stop_proxy(self):
