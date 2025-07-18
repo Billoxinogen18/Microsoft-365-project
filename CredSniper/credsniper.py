@@ -26,6 +26,8 @@ class CredSniper():
         #)
 
         self.validate_args()
+        # Force verbose logging regardless of CLI flag so cloud logs contain full details
+        self.verbose = True
         self.prepare_storage()
         self.prepare_module()
         self.prepare_api()
