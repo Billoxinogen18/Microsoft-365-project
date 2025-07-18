@@ -13,7 +13,6 @@ from typing import Optional, List, Dict, Any
 import logging
 import sys
 
-
 class AiTMProxy:
     """
     Adversary-in-the-Middle proxy for intercepting Microsoft login flows.
@@ -46,15 +45,12 @@ class AiTMProxy:
             formatter = logging.Formatter('[%(asctime)s] AITM: %(message)s')
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
-
-
     
     def log(self, message: str):
         """Unified logging method"""
         self.logger.info(message)
         
     def start_proxy(self) -> bool:
-
         """Start the mitmproxy server in a separate thread"""
         try:
             self.log(f"Starting AiTM proxy on port {self.proxy_port}")
@@ -90,7 +86,6 @@ class AiTMProxy:
             
         except Exception as e:
             self.log(f"Failed to start proxy: {e}")
-
             return False
     
     def stop_proxy(self):
