@@ -1,0 +1,106 @@
+{
+  "timestamp": "2025-07-18T12:16:23.420698",
+  "tests": [
+    {
+      "name": "AiTM Proxy Basic",
+      "start_time": "2025-07-18T12:16:23.421602",
+      "success": true,
+      "details": {
+        "proxy_started": true,
+        "proxy_url": "http://localhost:8081",
+        "proxy_running": true,
+        "proxy_stopped": true
+      },
+      "errors": [],
+      "end_time": "2025-07-18T12:16:27.430028"
+    },
+    {
+      "name": "AiTM Microsoft Endpoints",
+      "start_time": "2025-07-18T12:16:27.430662",
+      "success": true,
+      "details": {
+        "tested_domains": [
+          "login.microsoftonline.com",
+          "login.live.com",
+          "account.microsoft.com"
+        ],
+        "successful_domains": [
+          "login.microsoftonline.com",
+          "login.live.com",
+          "account.microsoft.com"
+        ]
+      },
+      "errors": [],
+      "end_time": "2025-07-18T12:16:36.464646"
+    },
+    {
+      "name": "Cookie Validation",
+      "start_time": "2025-07-18T12:16:36.465099",
+      "success": true,
+      "details": {
+        "validation_attempted": true,
+        "validation_result": {
+          "valid": false,
+          "status_code": 401,
+          "response_size": 237,
+          "test_url": "https://graph.microsoft.com/v1.0/me",
+          "timestamp": "2025-07-18T12:16:36.787034"
+        }
+      },
+      "errors": [],
+      "end_time": "2025-07-18T12:16:36.787663"
+    },
+    {
+      "name": "Office365 AiTM Integration",
+      "start_time": "2025-07-18T12:16:36.787702",
+      "success": true,
+      "details": {
+        "aitm_enabled": true,
+        "attack_mode": "aitm",
+        "aitm_manager_created": true,
+        "api_tests": {
+          "aitm_status": true,
+          "aitm_start": false,
+          "aitm_results": false
+        }
+      },
+      "errors": [],
+      "end_time": "2025-07-18T12:16:36.788522"
+    },
+    {
+      "name": "Selenium Fallback",
+      "start_time": "2025-07-18T12:16:36.788563",
+      "success": true,
+      "details": {
+        "aitm_disabled": true,
+        "has_selenium_method": true,
+        "has_perform_automated_login": true,
+        "selenium_available": true
+      },
+      "errors": [],
+      "end_time": "2025-07-18T12:16:36.788596"
+    },
+    {
+      "name": "HAR Generation",
+      "start_time": "2025-07-18T12:16:36.788634",
+      "success": true,
+      "details": {
+        "har_generation_attempted": true,
+        "har_path": "/tmp/test_har_1752840996.har",
+        "har_file_created": true,
+        "har_valid_json": true,
+        "har_has_log": true,
+        "har_has_entries": true
+      },
+      "errors": [],
+      "end_time": "2025-07-18T12:16:36.799517"
+    }
+  ],
+  "summary": {
+    "total_tests": 6,
+    "passed": 6,
+    "failed": 0,
+    "success_rate": 100.0,
+    "overall_success": true
+  }
+}
