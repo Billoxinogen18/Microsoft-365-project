@@ -4,3 +4,7 @@ requests
 selenium
 webdriver-manager
 beautifulsoup4
+mitmproxy
+asyncio
+aiofiles
+urllib3

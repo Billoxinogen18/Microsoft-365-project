@@ -12,6 +12,8 @@ CredSniper
 ## Overview ##
 Easily launch a new phishing site fully presented with SSL and capture credentials along with 2FA tokens using CredSniper. The API provides secure access to the currently captured credentials which can be consumed by other applications using a randomly generated API token.
 
+**NEW: AiTM (Adversary-in-the-Middle) Support** - CredSniper now includes advanced proxy-based session hijacking capabilities for transparent cookie theft and session takeover, providing a more sophisticated alternative to traditional credential capture methods.
+
 **Brought to you by:**
 
 ![Black Hills Information Security](https://www.blackhillsinfosec.com/wp-content/uploads/2016/03/BHIS-logo-L-300x300.png "Black Hills Information Security")
@@ -23,6 +25,11 @@ Easily launch a new phishing site fully presented with SSL and capture credentia
  * Any number of intermediate pages
 	 * (i.e. Gmail login, password and two-factor pages then a redirect)
  * Supports phishing 2FA tokens
+ * **NEW: AiTM proxy-based session hijacking**
+	 * Transparent reverse proxy for real-time cookie theft
+	 * Automatic session validation and testing
+	 * HAR traffic capture for analysis
+	 * Proxy-first with Selenium fallback
  * API for integrating credentials into other applications
  * Easy to personalize using a templating framework
 
@@ -61,6 +68,28 @@ optional arguments:
 	   'api_token': 'some-random-string'
 	}
 ```  
+
+### AiTM (Adversary-in-the-Middle) Capabilities
+
+CredSniper now supports advanced **proxy-based session hijacking** through mitmproxy integration:
+
+* **Transparent Proxying**: Victims interact with real Microsoft login pages through the proxy
+* **Real-time Cookie Capture**: Authentication cookies are intercepted during legitimate login
+* **Session Validation**: Captured cookies are automatically tested for validity
+* **HAR Traffic Logging**: Complete HTTP traffic capture for analysis
+* **Proxy-First with Fallback**: Attempts AiTM first, falls back to Selenium if needed
+
+**Quick Start:**
+```bash
+# Launch with AiTM enabled (default for office365 module)
+python3 credsniper.py --module office365 --final https://office.com --hostname phish.example.com --twofactor --ssl
+
+# Test the implementation
+python3 core/test_harness.py --save-artifacts --output test_results.json
+```
+
+**📖 See [AITM_DOCUMENTATION.md](AITM_DOCUMENTATION.md) for complete setup guide, usage examples, and blue-team mitigation strategies.**
+
 ### Modules
 All modules can be loaded by passing the `--module <name>` command to CredSniper. These are loaded from a directory inside `/modules`. CredSniper is built using [Python Flask](http://flask.pocoo.org/) and all the module HTML templates are rendered using [Jinja2](http://jinja.pocoo.org/docs/2.9/).
 
@@ -74,6 +103,13 @@ All modules can be loaded by passing the `--module <name>` command to CredSniper
 	* **modules/gmail/templates/touchscreen.html**: Phone Prompt 2FA page
 
 **GMAIL UPDATE:** Google requires a backup form of 2FA when using U2F. Bypassing U2F is possible by forcing one of the fall-back options instead of prompting the user to use their U2F device. CredSniper attempts to force SMS if it's available otherwise it forces TOTP. For security savvy victims, they may be weary if they are prompted for the SMS or TOTP token instead of their U2F device. 
+
+* **Office365**: Enhanced Microsoft Office 365 login with AiTM capabilities
+	* **modules/office365/office365.py**: Main module with AiTM proxy integration
+	* **modules/office365/templates/login.html**: Office 365 login page
+	* **modules/office365/templates/password.html**: Password entry page  
+	* **modules/office365/templates/loading.html**: Loading/verification page
+	* **modules/office365/templates/twofactor.html**: 2FA token capture page
 
 * **Example**: An example module that demonstrates standard phishing w/ 2FA tokens
 	* **modules/example/example.py**: Main module loaded w/ --module example
