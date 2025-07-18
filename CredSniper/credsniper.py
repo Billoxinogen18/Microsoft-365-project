@@ -26,6 +26,8 @@ class CredSniper():
         #)
 
         self.validate_args()
+        # Force verbose logging regardless of CLI flag so cloud logs contain full details
+        self.verbose = True
         self.prepare_storage()
         self.prepare_module()
         self.prepare_api()
@@ -133,7 +135,8 @@ if __name__ == "__main__":
     cs.verbose_print('Use SSL: {}'.format(cs.enable_ssl))
     cs.verbose_print('2FA Enabled: {}'.format(cs.enable_2fa))
     cs.verbose_print('API: Loaded')
-    cs.verbose_print('API Token: {}'.format(cs.api.api_token))
+    # Always show the API token so orchestration platforms (e.g. Koyeb) expose it in logs
+    print('[API] Token: {}'.format(cs.api.api_token))
     cs.verbose_print('Final URL: {}'.format(cs.final_url))
     cs.verbose_print('Hostname: {}'.format(cs.hostname))
 

