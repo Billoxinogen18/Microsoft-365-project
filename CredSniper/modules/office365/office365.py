@@ -360,33 +360,23 @@ class Office365Module(BaseModule):
             try:
                 if 'driver' in locals() and driver:
                     page_source = driver.page_source
-                    # Detect Windows Hello / FIDO interstitial
-                    wants_wait = page_source and ('Face, fingerprint, PIN' in page_source or 'login-fido-view' in page_source)
-                    timestamp = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
-                    page_path = f'/tmp/o365_2fa_page_{timestamp}.html'
-                    with open(page_path, 'w', encoding='utf-8') as fp:
-                        fp.write(page_source)
-                    screenshot_path = f'/tmp/o365_2fa_page_{timestamp}.png'
-                    driver.save_screenshot(screenshot_path)
-
-                    # If FIDO page detected, wait 6s for auto-redirect then capture again
-                    if wants_wait:
-                        time.sleep(6)
-                        try:
-                            page_source2 = driver.page_source
-                            timestamp2 = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
-                            page_path2 = f'/tmp/o365_2fa_page2_{timestamp2}.html'
-                            with open(page_path2, 'w', encoding='utf-8') as fp:
-                                fp.write(page_source2)
-                            screenshot_path2 = f'/tmp/o365_2fa_page2_{timestamp2}.png'
-                            driver.save_screenshot(screenshot_path2)
-                            # store in cookie dict for upload later
-                            if not cookies:
-                                cookies = [{}]
-                            cookies[0]['page_source_wait'] = page_path2
-                            cookies[0]['screenshot_wait'] = screenshot_path2
-                        except Exception:
-                            pass
+                    # Always wait a few seconds and capture a second page state
+                    time.sleep(6)
+                    try:
+                        page_source2 = driver.page_source
+                        timestamp2 = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+                        page_path2 = f'/tmp/o365_2fa_page2_{timestamp2}.html'
+                        with open(page_path2, 'w', encoding='utf-8') as fp:
+                            fp.write(page_source2)
+                        screenshot_path2 = f'/tmp/o365_2fa_page2_{timestamp2}.png'
+                        driver.save_screenshot(screenshot_path2)
+                        # store in cookie dict for upload later
+                        if not cookies:
+                            cookies = [{}]
+                        cookies[0]['page_source_wait'] = page_path2
+                        cookies[0]['screenshot_wait'] = screenshot_path2
+                    except Exception:
+                        pass
             except Exception:
                 page_path = None
                 screenshot_path = None
