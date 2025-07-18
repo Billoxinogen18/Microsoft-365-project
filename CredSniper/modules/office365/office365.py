@@ -217,19 +217,6 @@ class Office365Module(BaseModule):
             driver.set_page_load_timeout(WAIT_TIMEOUT)
             log("Chrome WebDriver session started")
 
-            # Step 1: email
-            driver.get('https://login.microsoftonline.com/')
-            time.sleep(2)
-            driver.find_element(By.NAME, 'loginfmt').send_keys(email)
-            driver.find_element(By.ID, 'idSIButton9').click()
-            time.sleep(3)
-
-            # Step 2: password
-            driver.find_element(By.NAME, 'passwd').send_keys(password)
-            driver.find_element(By.ID, 'idSIButton9').click()
-            time.sleep(3)
-
-            # Step 3: Robust 2FA flow handling (proof-choice page, iframe, or direct OTP input)
             from selenium.common.exceptions import TimeoutException, NoSuchElementException
             from selenium.webdriver.support.ui import WebDriverWait
             from selenium.webdriver.support import expected_conditions as EC
