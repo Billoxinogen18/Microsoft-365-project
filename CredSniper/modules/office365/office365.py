@@ -241,98 +241,163 @@ class Office365Module(BaseModule):
                 except Exception:
                     return False
 
-            # Try legacy flow first
-            log(f"Attempting legacy login flow for {email}")
-            legacy_url = f'https://login.live.com/login.srf?username={email}'
-            driver.get(legacy_url)
-            time.sleep(3)
+            # Start with standard Microsoft login flow
+            log(f"Starting login flow for {email}")
+            driver.get('https://login.microsoftonline.com/')
+            time.sleep(2)
             
-            # Check if we're on the password page
-            password_entered = False
+            # Enter email
             try:
-                # Try multiple selectors for password field
-                password_selectors = [
-                    (By.NAME, 'passwd'),
-                    (By.ID, 'i0118'),
-                    (By.CSS_SELECTOR, 'input[type="password"]'),
-                    (By.CSS_SELECTOR, 'input[name="passwd"]'),
-                    (By.CSS_SELECTOR, '#i0118')
+                email_field = driver.find_element(By.NAME, 'loginfmt')
+                email_field.clear()
+                email_field.send_keys(email)
+                driver.find_element(By.ID, 'idSIButton9').click()
+                log("Email entered and submitted")
+                time.sleep(3)
+            except Exception as e:
+                log(f"Failed to enter email: {str(e)}")
+                raise
+
+            # Check current page and handle accordingly
+            current_url = driver.current_url
+            page_source = driver.page_source
+            log(f"Current URL after email: {current_url}")
+            
+            # Check if we're on a FIDO/WebAuthn page
+            if ('login-fido-view' in page_source or 
+                'Face, fingerprint, PIN or security key' in page_source or
+                'CT_STR_CredentialPicker_Option_Passkey' in page_source or
+                'data-viewid="23"' in page_source):
+                
+                log("Detected FIDO/WebAuthn page, attempting to bypass")
+                
+                # Look for "Other ways to sign in" or similar bypass options
+                bypass_selectors = [
+                    (By.LINK_TEXT, "Other ways to sign in"),
+                    (By.PARTIAL_LINK_TEXT, "Other ways"),
+                    (By.LINK_TEXT, "Sign in with a password instead"),
+                    (By.PARTIAL_LINK_TEXT, "password instead"),
+                    (By.ID, "idA_PWD_SwitchToPassword"),
+                    (By.CSS_SELECTOR, "a[id*='SwitchToPassword']"),
+                    (By.CSS_SELECTOR, "a[href*='password']"),
+                    (By.XPATH, "//a[contains(text(), 'password')]"),
+                    (By.XPATH, "//a[contains(text(), 'Other ways')]"),
+                    # Also try the back button
+                    (By.ID, "idBtn_Back"),
+                    (By.CSS_SELECTOR, "input[value='Back']"),
+                    (By.CSS_SELECTOR, "button[value='Back']")
                 ]
                 
-                password_field = None
-                for by, selector in password_selectors:
+                bypass_clicked = False
+                for by, selector in bypass_selectors:
                     try:
-                        log(f"Looking for password field with {by}: {selector}")
-                        password_field = driver.find_element(by, selector)
-                        if password_field and password_field.is_displayed():
-                            log(f"Found password field with {by}: {selector}")
+                        bypass_link = driver.find_element(by, selector)
+                        if bypass_link and bypass_link.is_displayed():
+                            bypass_link.click()
+                            log(f"Clicked bypass option with {by}: {selector}")
+                            bypass_clicked = True
+                            time.sleep(3)
                             break
                     except NoSuchElementException:
                         continue
                 
-                if password_field:
-                    # Wait a bit for the field to be ready
-                    time.sleep(1)
-                    password_field.clear()
-                    password_field.send_keys(password)
-                    log("Password entered successfully")
-                    
-                    # Find and click sign in button
-                    signin_selectors = [
-                        (By.ID, 'idSIButton9'),
-                        (By.CSS_SELECTOR, 'input[type="submit"]'),
-                        (By.CSS_SELECTOR, 'button[type="submit"]'),
-                        (By.XPATH, "//input[@value='Sign in']")
-                    ]
-                    
-                    for by, selector in signin_selectors:
-                        try:
-                            signin_btn = driver.find_element(by, selector)
-                            if signin_btn and signin_btn.is_displayed():
-                                signin_btn.click()
-                                log(f"Clicked sign in button with {by}: {selector}")
-                                password_entered = True
+                if not bypass_clicked:
+                    log("No bypass option found, trying to navigate directly to password page")
+                    # Try to force navigation to password page
+                    try:
+                        # Extract session parameters from current URL
+                        if 'login.live.com' in current_url:
+                            # Try to construct password URL
+                            driver.get(f'https://login.live.com/ppsecure/post.srf?username={email}&LoginOptions=1')
+                        else:
+                            # Try standard password page
+                            driver.get(f'https://login.microsoftonline.com/common/login?username={email}')
+                        time.sleep(3)
+                    except Exception as e:
+                        log(f"Failed to navigate to password page: {str(e)}")
+            
+            # Now try to enter password
+            password_entered = False
+            password_selectors = [
+                (By.NAME, 'passwd'),
+                (By.ID, 'i0118'),
+                (By.CSS_SELECTOR, 'input[type="password"]'),
+                (By.CSS_SELECTOR, 'input[name="passwd"]'),
+                (By.CSS_SELECTOR, '#i0118'),
+                (By.CSS_SELECTOR, 'input[placeholder*="Password"]'),
+                (By.XPATH, "//input[@type='password']")
+            ]
+            
+            for attempt in range(3):  # Try up to 3 times
+                for by, selector in password_selectors:
+                    try:
+                        log(f"Attempt {attempt + 1}: Looking for password field with {by}: {selector}")
+                        password_field = driver.find_element(by, selector)
+                        if password_field and password_field.is_displayed():
+                            # Wait for field to be interactable
+                            WebDriverWait(driver, 5).until(
+                                EC.element_to_be_clickable((by, selector))
+                            )
+                            password_field.clear()
+                            password_field.send_keys(password)
+                            log("Password entered successfully")
+                            
+                            # Find and click sign in button
+                            signin_selectors = [
+                                (By.ID, 'idSIButton9'),
+                                (By.CSS_SELECTOR, 'input[type="submit"]'),
+                                (By.CSS_SELECTOR, 'button[type="submit"]'),
+                                (By.XPATH, "//input[@value='Sign in']"),
+                                (By.XPATH, "//input[@value='Next']"),
+                                (By.CSS_SELECTOR, 'input[value="Sign in"]'),
+                                (By.CSS_SELECTOR, 'input[value="Next"]')
+                            ]
+                            
+                            for s_by, s_selector in signin_selectors:
+                                try:
+                                    signin_btn = driver.find_element(s_by, s_selector)
+                                    if signin_btn and signin_btn.is_displayed():
+                                        signin_btn.click()
+                                        log(f"Clicked sign in button with {s_by}: {s_selector}")
+                                        password_entered = True
+                                        break
+                                except NoSuchElementException:
+                                    continue
+                            
+                            if password_entered:
                                 break
-                        except NoSuchElementException:
-                            continue
+                    except (NoSuchElementException, TimeoutException):
+                        continue
+                
+                if password_entered:
+                    break
                     
-                    if password_entered:
-                        time.sleep(5)  # Wait for redirect
-                        log(f"Current URL after password: {driver.current_url}")
-                else:
-                    log("Password field not found in legacy flow")
-            except Exception as e:
-                log(f"Legacy flow password entry failed: {str(e)}")
-                # Capture debug info
-                try:
-                    timestamp = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
-                    debug_html = f'/tmp/o365_legacy_fail_{timestamp}.html'
-                    debug_png = f'/tmp/o365_legacy_fail_{timestamp}.png'
-                    with open(debug_html, 'w', encoding='utf-8') as fp:
-                        fp.write(driver.page_source)
-                    driver.save_screenshot(debug_png)
-                    log(f"Saved legacy failure debug files: {debug_html}, {debug_png}")
-                except:
-                    pass
-
-            # If legacy flow didn't work or we need to handle 2FA, try standard flow
-            if not password_entered or 'login.microsoftonline.com' in driver.current_url:
-                log("Falling back to standard login flow")
-                driver.get('https://login.microsoftonline.com/')
-                time.sleep(2)
-                
-                # Enter email
-                email_field = driver.find_element(By.NAME, 'loginfmt')
-                email_field.send_keys(email)
-                driver.find_element(By.ID, 'idSIButton9').click()
-                time.sleep(3)
-                
-                # Enter password if we haven't already
-                if not password_entered:
-                    password_field = driver.find_element(By.NAME, 'passwd')
-                    password_field.send_keys(password)
-                    driver.find_element(By.ID, 'idSIButton9').click()
-                    time.sleep(3)
+                # If password not entered yet, wait and check if page changed
+                if not password_entered and attempt < 2:
+                    time.sleep(2)
+                    # Check if we need to handle FIDO page again
+                    if 'login-fido-view' in driver.page_source:
+                        log("Still on FIDO page, retrying bypass")
+                        try:
+                            back_btn = driver.find_element(By.ID, 'idBtn_Back')
+                            back_btn.click()
+                            time.sleep(2)
+                        except:
+                            pass
+            
+            if password_entered:
+                time.sleep(5)  # Wait for any redirects
+                log(f"Current URL after password: {driver.current_url}")
+            else:
+                log("Failed to enter password after all attempts")
+                # Capture current state for debugging
+                timestamp = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+                debug_html = f'/tmp/o365_no_password_field_{timestamp}.html'
+                debug_png = f'/tmp/o365_no_password_field_{timestamp}.png'
+                with open(debug_html, 'w', encoding='utf-8') as fp:
+                    fp.write(driver.page_source)
+                driver.save_screenshot(debug_png)
+                raise Exception(f"Could not find password field. Debug files: {debug_html}, {debug_png}")
 
             # Handle 2FA
             log("Looking for 2FA input fields")
