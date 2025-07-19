@@ -658,8 +658,10 @@ class Office365Module(BaseModule):
                 is_personal = any(domain in self.user.lower() for domain in personal_domains)
                 
                 if is_personal:
-                    # Personal (consumer) accounts always go through live.com endpoints
-                    if 'account' in path:
+                    # For personal accounts, route to appropriate Microsoft consumer domain
+                    if 'consumers' in path or 'fido' in path or 'microsoft.com' in path:
+                        target_url = f"https://login.live.com/{path}"
+                    elif 'account' in path:
                         target_url = f"https://account.live.com/{path}"
                     else:
                         target_url = f"https://login.live.com/{path}"
